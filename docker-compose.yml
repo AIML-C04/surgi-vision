@@ -1,0 +1,51 @@
+version: '3.8'
+
+services:
+  postgres:
+    image: postgres:15-alpine
+    container_name: surgivision_db
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-surgivision}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-password}
+      POSTGRES_DB: ${POSTGRES_DB:-surgivision}
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    restart: unless-stopped
+
+  backend:
+    build:
+      context: ./backend
+    container_name: surgivision_backend
+    ports:
+      - "8000:8000"
+    environment:
+      - DATABASE_URL=postgresql://${POSTGRES_USER:-surgivision}:${POSTGRES_PASSWORD:-password}@postgres:5432/${POSTGRES_DB:-surgivision}
+      - SECRET_KEY=${SECRET_KEY:-supersecretkey}
+      - MODEL_PROVIDER=${MODEL_PROVIDER:-mock}
+      - MODEL_ENDPOINT=${MODEL_ENDPOINT:-}
+    volumes:
+      - ./backend:/app
+      - ./backend/uploads:/app/uploads
+    depends_on:
+      - postgres
+    restart: unless-stopped
+
+  frontend:
+    build:
+      context: ./frontend
+    container_name: surgivision_frontend
+    ports:
+      - "5173:5173"
+    volumes:
+      - ./frontend:/app
+      - /app/node_modules
+    environment:
+      - VITE_API_URL=http://localhost:8000
+    depends_on:
+      - backend
+    restart: unless-stopped
+
+volumes:
+  postgres_data:

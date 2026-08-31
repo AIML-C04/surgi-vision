@@ -1,0 +1,26 @@
+import os
+from pydantic_settings import BaseSettings
+
+class Settings(BaseSettings):
+    API_V1_STR: str = "/api/v1"
+    PROJECT_NAME: str = "SurgiVision AI"
+    
+    POSTGRES_USER: str = os.getenv("POSTGRES_USER", "surgivision")
+    POSTGRES_PASSWORD: str = os.getenv("POSTGRES_PASSWORD", "password")
+    POSTGRES_DB: str = os.getenv("POSTGRES_DB", "surgivision")
+    DATABASE_URL: str = os.getenv(
+        "DATABASE_URL", 
+        "sqlite:///./surgivision.db"
+    )
+    
+    SECRET_KEY: str = os.getenv("SECRET_KEY", "supersecretkey")
+    ALGORITHM: str = "HS256"
+    ACCESS_TOKEN_EXPIRE_MINUTES: int = 60 * 24 * 7 # 7 days
+    
+    MODEL_PROVIDER: str = os.getenv("MODEL_PROVIDER", "mock")
+    MODEL_ENDPOINT: str = os.getenv("MODEL_ENDPOINT", "")
+    
+    class Config:
+        case_sensitive = True
+
+settings = Settings()
