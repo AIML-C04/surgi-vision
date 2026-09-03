@@ -26,12 +26,12 @@ async def upload_video(
     if not any(file.filename.lower().endswith(ext) for ext in allowed_extensions):
         raise HTTPException(status_code=400, detail="Invalid file type.")
     
-    file_id = str(uuid4())
+    file_id = uuid4()
     # Upload file
     try:
         file_path = storage.upload_file(
             user_id=str(current_user.id),
-            file_id=file_id,
+            file_id=str(file_id),
             file_name=file.filename,
             file=file.file
         )
@@ -72,7 +72,13 @@ def get_video_url(
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user)
 ) -> Any:
-    video = db.query(Video).filter(Video.id == video_id, Video.user_id == current_user.id).first()
+    from uuid import UUID
+    try:
+        vid_uuid = UUID(video_id)
+    except ValueError:
+        raise HTTPException(status_code=400, detail="Invalid video ID format")
+        
+    video = db.query(Video).filter(Video.id == vid_uuid, Video.user_id == current_user.id).first()
     if not video:
         raise HTTPException(status_code=404, detail="Video not found")
         
