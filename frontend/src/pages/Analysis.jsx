@@ -21,11 +21,24 @@ const Analysis = () => {
     let isMounted = true;
     
     // Fetch initial status
-    const fetchStatus = async () => {
+      const fetchStatus = async () => {
       try {
-        const res = await axios.get(`${API_URL}/api/v1/analysis/${id}`);
+        const token = localStorage.getItem('token');
+        const config = { headers: { Authorization: `Bearer ${token}` } };
+        const res = await axios.get(`${API_URL}/api/v1/analysis/${id}`, config);
+        
+        let video_url = null;
+        if (res.data.video_id) {
+            try {
+                const urlRes = await axios.get(`${API_URL}/api/v1/videos/${res.data.video_id}/url`, config);
+                video_url = `${API_URL}${urlRes.data.url}`;
+            } catch (err) {
+                console.error("Failed to fetch video URL", err);
+            }
+        }
+        
         if (isMounted) {
-          setAnalysis(res.data);
+          setAnalysis({ ...res.data, video_url });
           setProgress(res.data.progress);
         }
       } catch (err) {
@@ -162,21 +175,35 @@ const Analysis = () => {
       <div className="grid grid-cols-3 gap-6 flex-1 min-h-0">
         
         {/* Main Video Area */}
+        {/* Main Video Area */}
         <div className="col-span-2 flex flex-col space-y-6">
           <div className="bg-black rounded-xl overflow-hidden relative border border-dark-700 flex-1 flex flex-col">
-            {/* Simulated Video Player */}
-            <div className="flex-1 relative flex items-center justify-center">
-              <p className="text-dark-700 font-bold text-4xl">SURGICAL VIDEO STREAM</p>
-              <BoundingBoxOverlay />
+            {/* Real Video Player */}
+            <div className="flex-1 relative flex items-center justify-center bg-black">
+              {analysis?.video_url ? (
+                <video 
+                  id="surgical-video"
+                  src={analysis.video_url} 
+                  controls 
+                  className="w-full h-full object-contain"
+                  crossOrigin="anonymous"
+                />
+              ) : (
+                <p className="text-dark-700">Loading Video...</p>
+              )}
+              {/* <BoundingBoxOverlay /> */} 
             </div>
             
-            {/* Controls */}
+            {/* Processing Status */}
             <div className="bg-dark-800 p-4 border-t border-dark-700">
-              <div className="w-full bg-dark-900 rounded-full h-1.5 mb-4">
+              <div className="flex justify-between text-xs text-gray-400 mb-1">
+                <span>AI Processing Progress</span>
+                <span>{Math.round(progress)}%</span>
+              </div>
+              <div className="w-full bg-dark-900 rounded-full h-1.5 mb-2">
                 <div className="bg-primary-500 h-1.5 rounded-full transition-all duration-300" style={{ width: `${progress}%` }}></div>
               </div>
               <div className="flex justify-between text-xs text-gray-400">
-                <span>{currentFrame ? `T+${currentFrame.timestamp.toFixed(2)}s` : '00:00:00'}</span>
                 <span>{analysis?.status === 'processing' ? 'Processing...' : 'Completed'}</span>
               </div>
             </div>

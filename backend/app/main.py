@@ -8,8 +8,7 @@ from app.models import User, Video, AnalysisSession, Detection, Track, SurgicalP
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    # Create tables if they don't exist
-    Base.metadata.create_all(bind=engine)
+    # Base.metadata.create_all(bind=engine) # Removed in favor of proper migrations
     yield
 
 app = FastAPI(
@@ -38,6 +37,13 @@ def health_check():
 # Include routers here later
 from app.api.v1.api import api_router
 app.include_router(api_router, prefix=settings.API_V1_STR)
+
+from fastapi.staticfiles import StaticFiles
+
+# Serve local uploads for development
+import os
+os.makedirs("uploads", exist_ok=True)
+app.mount("/files", StaticFiles(directory="uploads"), name="uploads")
 
 if __name__ == "__main__":
     import uvicorn

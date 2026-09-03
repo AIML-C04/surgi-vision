@@ -61,5 +61,6 @@ def get_analysis_status(
         "status": analysis.status,
         "progress": analysis.progress,
         "video_title": analysis.video.title,
+        "video_id": str(analysis.video_id),
         "model_provider": analysis.model_provider
     }

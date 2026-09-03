@@ -46,8 +46,7 @@ def get_provider():
                 _provider_instance = RealInferenceProvider()
             except Exception as e:
                 print(f"Error loading RealInferenceProvider: {e}")
-                print("Falling back to MockInferenceProvider")
-                _provider_instance = MockInferenceProvider()
+                raise RuntimeError(f"MODEL_PROVIDER=real but model failed to load: {e}")
         else:
             _provider_instance = MockInferenceProvider()
     return _provider_instance
@@ -152,5 +151,12 @@ async def process_video_background(analysis_id: str, video_duration: float, db: 
     session.status = "completed"
     session.progress = 100.0
     db.commit()
+    
+    # Generate knowledge chunks
+    try:
+        from app.services.rag.indexer import generate_knowledge_from_analysis
+        generate_knowledge_from_analysis(db, str(session.id), str(session.video_id), str(video.user_id))
+    except Exception as e:
+        print(f"Error generating knowledge: {e}")
     
     await manager.broadcast({"event": "analysis_completed"}, analysis_id)
