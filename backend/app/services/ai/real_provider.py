@@ -7,6 +7,9 @@ from app.services.ai.base import AIInferenceProvider
 class RealInferenceProvider(AIInferenceProvider):
     def __init__(self):
         model_path = os.getenv("MODEL_PATH", "models/yolov8s_cholec80.pt")
+        if not os.path.exists(model_path):
+            raise RuntimeError(f"Model checkpoint not found at {model_path}. "
+                               f"Real inference requires the actual weights.")
         print(f"Loading Real YOLO Model from: {model_path}")
         self.model = YOLO(model_path)
         self.confidence_threshold = float(os.getenv("MODEL_CONFIDENCE_THRESHOLD", 0.5))

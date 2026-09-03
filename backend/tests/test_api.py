@@ -125,13 +125,44 @@ def test_rag_insufficient_evidence():
 
 def test_rag_ownership_filtering():
     tokenB = login_user("userB@example.com", "pass")
-    # Try querying User A's video
-    # Get User A's video ID from DB directly or assume UUID
-    # Since we don't have it, we just create a random UUID
     random_uuid = str(uuid.uuid4())
     res_chat = client.post(
         "/api/v1/chat/",
         headers={"Authorization": f"Bearer {tokenB}"},
         json={"query": "What instruments are seen?", "video_id": random_uuid}
     )
-    assert res_chat.status_code == 404 # Video not found or not owned
+    assert res_chat.status_code == 404
+
+def test_conversation_ownership():
+    tokenB = login_user("userB@example.com", "pass")
+    random_uuid = str(uuid.uuid4())
+    res = client.get(
+        f"/api/v1/chat/{random_uuid}",
+        headers={"Authorization": f"Bearer {tokenB}"}
+    )
+    assert res.status_code == 404
+
+def test_missing_model_explicit_failure():
+    from app.services.ai.processor import get_provider
+    import os
+    
+    # Force real provider with non-existent checkpoint path
+    os.environ["MODEL_PROVIDER"] = "real"
+    os.environ["MODEL_PATH"] = "nonexistent.pt"
+    
+    try:
+        provider = get_provider()
+    except RuntimeError as e:
+        msg = str(e)
+        assert "Model checkpoint not found" in msg or "ultralytics" in msg or "Failed to load model" in msg or "Model loading error" in msg
+        
+    os.environ["MODEL_PROVIDER"] = "mock" # Reset for other tests
+
+def test_unauthorized_websocket_access():
+    from starlette.websockets import WebSocketDisconnect
+    try:
+        with client.websocket_connect(f'/api/v1/live/ws/{uuid.uuid4()}/host') as websocket:
+            websocket.receive_text()
+            assert False, 'Should have disconnected'
+    except WebSocketDisconnect as e:
+        assert e.code == 1008

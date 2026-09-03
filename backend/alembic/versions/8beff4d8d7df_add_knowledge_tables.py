@@ -32,6 +32,15 @@ def upgrade() -> None:
     sa.PrimaryKeyConstraint('id')
     )
     op.create_index(op.f('ix_conversations_id'), 'conversations', ['id'], unique=False)
+    # Check if dialect is postgresql
+    is_postgres = op.get_context().dialect.name == "postgresql"
+    if is_postgres:
+        op.execute('CREATE EXTENSION IF NOT EXISTS vector;')
+        import pgvector.sqlalchemy
+        embedding_type = pgvector.sqlalchemy.Vector(384)
+    else:
+        embedding_type = sa.JSON()
+
     op.create_table('video_knowledge_chunks',
     sa.Column('id', sa.Uuid(), nullable=False),
     sa.Column('video_id', sa.Uuid(), nullable=False),
@@ -41,7 +50,7 @@ def upgrade() -> None:
     sa.Column('end_time', sa.Float(), nullable=True),
     sa.Column('content', sa.Text(), nullable=False),
     sa.Column('embedding_model', sa.String(), nullable=True),
-    sa.Column('embedding', sa.JSON(), nullable=True),
+    sa.Column('embedding', embedding_type, nullable=True),
     sa.Column('created_at', sa.DateTime(timezone=True), server_default=sa.text('(CURRENT_TIMESTAMP)'), nullable=True),
     sa.ForeignKeyConstraint(['user_id'], ['users.id'], ondelete='CASCADE'),
     sa.ForeignKeyConstraint(['video_id'], ['videos.id'], ondelete='CASCADE'),
