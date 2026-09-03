@@ -2,7 +2,19 @@ from sqlalchemy import Column, String, Float, ForeignKey, DateTime, Integer, Uui
 from sqlalchemy.sql import func
 from sqlalchemy.orm import relationship
 from app.core.database import Base
+from app.core.config import settings
 import uuid
+import json
+
+# Try to import Vector from pgvector, fallback to JSON for SQLite
+try:
+    if "postgresql" in settings.DATABASE_URL:
+        from pgvector.sqlalchemy import Vector
+        EmbeddingType = Vector(384) # Assuming all-MiniLM-L6-v2 size
+    else:
+        EmbeddingType = JSON
+except ImportError:
+    EmbeddingType = JSON
 
 class VideoKnowledgeChunk(Base):
     __tablename__ = "video_knowledge_chunks"
@@ -16,8 +28,8 @@ class VideoKnowledgeChunk(Base):
     end_time = Column(Float)
     content = Column(Text, nullable=False)
     embedding_model = Column(String) # e.g. "all-MiniLM-L6-v2"
-    # We will use a JSON array for embeddings in SQLite to allow fallback, or Vector if pgvector
-    embedding = Column(JSON) 
+    
+    embedding = Column(EmbeddingType)
     
     created_at = Column(DateTime(timezone=True), server_default=func.now())
     

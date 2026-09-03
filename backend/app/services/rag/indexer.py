@@ -17,11 +17,17 @@ def generate_knowledge_from_analysis(db: Session, analysis_id: str, video_id: st
             intervals[interval_idx] = set()
         intervals[interval_idx].add(d.class_name)
         
+    from app.services.rag.embeddings import generate_embeddings
+    
+    contents = []
+    chunks = []
+    
     for interval_idx, classes in intervals.items():
         start_time = interval_idx * 10.0
         end_time = start_time + 10.0
         
         content = f"At {start_time}s to {end_time}s, the following objects were detected: {', '.join(list(classes))}."
+        contents.append(content)
         
         chunk = VideoKnowledgeChunk(
             video_id=video_id,
@@ -30,9 +36,15 @@ def generate_knowledge_from_analysis(db: Session, analysis_id: str, video_id: st
             start_time=start_time,
             end_time=end_time,
             content=content,
-            embedding_model="none", # We will implement real embeddings later or mock
-            embedding=None
+            embedding_model="all-MiniLM-L6-v2",
         )
-        db.add(chunk)
+        chunks.append(chunk)
         
-    db.commit()
+    if contents:
+        embeddings = generate_embeddings(contents)
+        for i, chunk in enumerate(chunks):
+            if i < len(embeddings):
+                chunk.embedding = embeddings[i]
+            db.add(chunk)
+            
+        db.commit()

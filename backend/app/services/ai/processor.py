@@ -152,6 +152,29 @@ async def process_video_background(analysis_id: str, video_duration: float, db: 
     session.progress = 100.0
     db.commit()
     
+    # Generate Tracks from detections
+    tracks_map = {}
+    all_detections = db.query(Detection).filter(Detection.analysis_id == session.id).all()
+    for d in all_detections:
+        if d.track_id is not None:
+            if d.track_id not in tracks_map:
+                tracks_map[d.track_id] = {"class_name": d.class_name, "first": d.timestamp, "last": d.timestamp}
+            else:
+                tracks_map[d.track_id]["first"] = min(tracks_map[d.track_id]["first"], d.timestamp)
+                tracks_map[d.track_id]["last"] = max(tracks_map[d.track_id]["last"], d.timestamp)
+                
+    for tid, info in tracks_map.items():
+        t = Track(
+            analysis_id=session.id,
+            track_id=tid,
+            class_name=info["class_name"],
+            first_seen=info["first"],
+            last_seen=info["last"]
+        )
+        db.add(t)
+    
+    db.commit()
+
     # Generate knowledge chunks
     try:
         from app.services.rag.indexer import generate_knowledge_from_analysis

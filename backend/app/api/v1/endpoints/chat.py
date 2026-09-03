@@ -46,14 +46,29 @@ def ask_question(
     
     # Simple keyword search fallback for RAG
     # In production with pgvector, we would do a semantic search here
-    relevant_chunks = []
-    query_lower = req.query.lower()
-    for chunk in chunks:
-        # naive retrieval: just take chunks that contain words from query or all chunks if few
-        relevant_chunks.append(chunk)
+    from app.core.config import settings
+    
+    if "postgresql" in settings.DATABASE_URL:
+        from app.services.rag.embeddings import generate_embeddings
+        query_embedding = generate_embeddings([req.query])
+        if query_embedding:
+            # pgvector L2 distance
+            chunks = db.query(VideoKnowledgeChunk).filter(
+                VideoKnowledgeChunk.video_id == req.video_id,
+                VideoKnowledgeChunk.user_id == current_user.id
+            ).order_by(VideoKnowledgeChunk.embedding.l2_distance(query_embedding[0])).limit(5).all()
+        else:
+            chunks = db.query(VideoKnowledgeChunk).filter(
+                VideoKnowledgeChunk.video_id == req.video_id,
+                VideoKnowledgeChunk.user_id == current_user.id
+            ).limit(5).all()
+    else:
+        chunks = db.query(VideoKnowledgeChunk).filter(
+            VideoKnowledgeChunk.video_id == req.video_id,
+            VideoKnowledgeChunk.user_id == current_user.id
+        ).all()
         
-    # Limit context
-    relevant_chunks = relevant_chunks[:20] 
+    relevant_chunks = chunks[:5] 
     
     context_text = "\n".join([f"[{c.start_time}s]: {c.content}" for c in relevant_chunks])
     

@@ -7,6 +7,7 @@ import Dashboard from './pages/Dashboard';
 import UploadVideo from './pages/UploadVideo';
 import Analysis from './pages/Analysis';
 import Research from './pages/Research';
+import Live from './pages/Live';
 import Layout from './components/Layout';
 
 const ProtectedRoute = ({ children }) => {
@@ -28,6 +29,7 @@ function App() {
             <Route path="upload" element={<UploadVideo />} />
             <Route path="analysis/:id" element={<Analysis />} />
             <Route path="research" element={<Research />} />
+            <Route path="live" element={<Live />} />
           </Route>
         </Routes>
       </Router>

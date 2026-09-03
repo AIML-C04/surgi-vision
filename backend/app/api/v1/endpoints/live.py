@@ -87,9 +87,26 @@ async def live_websocket_endpoint(websocket: WebSocket, session_id: str, role: s
     
     try:
         while True:
-            data = await websocket.receive_text()
-            # Forward signaling data (SDP, ICE candidates) to the other peer
-            await live_manager.forward_message(data, session_id, role)
+            # We use receive() to handle both text and bytes
+            message = await websocket.receive()
+            if "text" in message:
+                await live_manager.forward_message(message["text"], session_id, role)
+            elif "bytes" in message and role == "host":
+                # Process frame through YOLO
+                from app.services.ai.processor import get_provider
+                import cv2
+                import numpy as np
+                
+                provider = get_provider()
+                nparr = np.frombuffer(message["bytes"], np.uint8)
+                frame = cv2.imdecode(nparr, cv2.IMREAD_COLOR)
+                
+                if frame is not None:
+                    prediction = provider.analyze_frame(0, 0, frame)
+                    await websocket.send_text(json.dumps({
+                        "type": "detections",
+                        "detections": prediction["detections"]
+                    }))
     except WebSocketDisconnect:
         live_manager.disconnect(websocket, session_id, role)
         
