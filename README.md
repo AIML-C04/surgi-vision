@@ -2,7 +2,7 @@
 
 **Surgical Video Intelligence**
 
-## 🚀 Local Setup — Start Here
+## 🚀 ( Team Members )Local Setup — Start Here
 
 > **For all team members:** Follow the complete setup guide before running the project locally.
 
@@ -23,6 +23,8 @@ It covers:
 - Testing
 - Troubleshooting
 - Team Git workflow
+
+## 🚀 ( Team Members )Local Setup — Ends Here
 
 Research / Educational Surgical Video Analytics Platform
 
