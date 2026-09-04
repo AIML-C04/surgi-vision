@@ -2,6 +2,28 @@
 
 **Surgical Video Intelligence**
 
+## 🚀 Local Setup — Start Here
+
+> **For all team members:** Follow the complete setup guide before running the project locally.
+
+👉 **[Open the Complete Local Setup Guide](./LOCAL_SETUP.md)**
+
+It covers:
+- Software and hardware requirements
+- Python virtual environment
+- Backend and frontend installation
+- Supabase database setup
+- Supabase Storage
+- pgvector
+- Hugging Face API/token setup
+- YOLO model download
+- `.env` configuration
+- Database migrations
+- Running the project
+- Testing
+- Troubleshooting
+- Team Git workflow
+
 Research / Educational Surgical Video Analytics Platform
 
 ## Overview
