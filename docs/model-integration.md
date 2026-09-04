@@ -4,6 +4,12 @@ SurgiVision AI is built with a decoupled architecture. The frontend, backend, da
 
 The current implementation utilizes a `RealInferenceProvider` connected to a local YOLO model, but it can be toggled to a `MockInferenceProvider` for demonstrations.
 
+## Live intelligence
+
+The existing WebRTC session remains the media transport and its authenticated WebSocket remains the signaling and intelligence transport. The host samples the received video and sends JPEG frames to a per-session bounded worker. The worker keeps only the newest queued frame, invokes the configured provider without reloading it, normalizes detections, maintains short-lived track state, and emits compact live intelligence updates. Live detections and events are ephemeral and are not written to recorded `AnalysisSession`, `Detection`, or `SurgicalEvent` tables.
+
+Live configuration includes `LIVE_INFERENCE_ENABLED` and `LIVE_MAX_QUEUE_SIZE`. A failed real provider reports `Live model unavailable`; it never silently falls back to mock inference. When `MODEL_PROVIDER=mock`, updates are labeled `test_mock` and must not be treated as real model evidence. `PHASE_MODEL_PROVIDER=none` also applies to live mode: phase recognition remains unavailable and is never inferred from live instruments or events.
+
 ## 1. Where to put the `.pt` file
 
 Place your YOLO model checkpoint (e.g., `yolov8s_cholec80.pt`) in the `models/` directory at the root of the project.
@@ -59,7 +65,7 @@ The `RealInferenceProvider` (located in `backend/app/services/ai/real_provider.p
 
 ## 5. Expected Model Output Schema
 
-Regardless of the underlying model, the provider must return a dictionary matching this schema. The frontend consumes this format over WebSockets:
+Regardless of the underlying model, the vision provider must return a dictionary matching this schema. The frontend consumes this format over WebSockets:
 
 ```json
 {
@@ -73,12 +79,11 @@ Regardless of the underlying model, the provider must return a dictionary matchi
       "track_id": 1
     }
   ],
-  "phase": {
-    "name": "Not available",
-    "confidence": 0.0
-  }
+  "model_version": "configured-model-version"
 }
 ```
+
+The Copilot is a separate Hugging Face text provider. It uses `LLM_MODEL` and the Hugging Face chat-completion API. The default is `openai/gpt-oss-20b`, unless the shared root `.env` explicitly sets a compatible model. The provider must return structured JSON with `answer`, `support`, and `evidence_ids`; those IDs are validated against retrieved evidence before the response is returned.
 
 ## 6. Tracking Architecture
 
@@ -88,14 +93,7 @@ We utilize Ultralytics' built-in tracking module (which typically runs BoT-SORT 
 
 **Important:** The integrated YOLO model (`yolov8s_cholec80.pt`) is purely an **Object Detection** model. It does not perform surgical phase classification on its own. 
 
-To maintain research integrity, the `RealInferenceProvider` explicitly hardcodes the phase response to:
-```json
-{
-  "name": "Not available",
-  "confidence": 0.0
-}
-```
-The frontend gracefully detects this and displays "Phase model not yet connected."
+To maintain research integrity, instrument providers do not emit phase predictions. Phase recognition is an independent provider configured with `PHASE_MODEL_PROVIDER`; when it is `none` (the default), the API and frontend display "Phase recognition unavailable" and persist no fabricated phase segments.
 
 ## 8. How to Switch Between Mock and Local Mode
 
@@ -105,7 +103,7 @@ If you are developing UI features on a machine without the model file or without
 MODEL_PROVIDER=mock
 ```
 
-This will bypass the `RealInferenceProvider` and load the `MockInferenceProvider`, streaming simulated random bounding boxes and fake phase transitions to the frontend.
+This will bypass the `RealInferenceProvider` and load the `MockInferenceProvider`, streaming simulated random bounding boxes to the frontend. Mock instrument detections do not generate phase predictions.
 
 ## 9. How to Replace the Model Later
 
@@ -114,4 +112,4 @@ To upgrade the model in the future:
 2. Update the `MODEL_PATH` in your `.env`.
 3. Restart the FastAPI backend.
 
-Because of the decoupled `AIInferenceProvider` architecture, no modifications to the database schema or the React frontend are required.
+Phase providers implement the independent `PhaseRecognitionProvider` contract. Provider output is validated, temporally merged, persisted with model and taxonomy provenance, and consumed by the existing timeline, report, Copilot, and comparison contracts.

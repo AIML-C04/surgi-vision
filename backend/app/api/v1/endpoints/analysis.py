@@ -5,10 +5,21 @@ from uuid import UUID
 from app.core.database import get_db, SessionLocal
 from app.api.deps import get_current_user
 from app.models.user import User
-from app.models.video import Video, AnalysisSession, Detection
-from app.services.ai.processor import process_video_background, manager
+from app.models.video import Video, AnalysisSession, Detection, Track
+from app.models.event import SurgicalEvent
+from app.services.ai.processor import process_video_background, recover_knowledge_indexing_background, manager
 
 router = APIRouter()
+
+
+def _configured_analysis_version() -> str:
+    import os
+    return os.getenv("ANALYSIS_VERSION", "1")
+
+
+def _configured_model_version() -> str:
+    import os
+    return os.getenv("MODEL_VERSION") or os.getenv("MODEL_PATH") or os.getenv("MODEL_PROVIDER", "mock")
 
 @router.post("/", response_model=Any)
 async def create_analysis(
@@ -25,10 +36,36 @@ async def create_analysis(
     existing_analysis = db.query(AnalysisSession).filter(
         AnalysisSession.video_id == video.id
     ).order_by(AnalysisSession.created_at.desc()).first()
+
+    analysis_version = _configured_analysis_version()
+    model_version = _configured_model_version()
     
     if existing_analysis and not reanalyze:
-        if existing_analysis.status in ["processing", "completed"]:
+        if existing_analysis.status == "processing":
             return {"analysis_id": existing_analysis.id, "status": existing_analysis.status}
+        if (
+            existing_analysis.status == "completed"
+            and existing_analysis.analysis_version == analysis_version
+            and (not existing_analysis.model_version or existing_analysis.model_version == model_version)
+        ):
+            return {"analysis_id": existing_analysis.id, "status": existing_analysis.status}
+        if (
+            existing_analysis.status == "error"
+            and existing_analysis.analysis_version == analysis_version
+            and (not existing_analysis.model_version or existing_analysis.model_version == model_version)
+            and (existing_analysis.error or "").startswith("Knowledge indexing failed:")
+            and db.query(Detection).filter(Detection.analysis_id == existing_analysis.id).count() > 0
+            and db.query(Track).filter(Track.analysis_id == existing_analysis.id).count() > 0
+            and db.query(SurgicalEvent).filter(SurgicalEvent.analysis_id == existing_analysis.id).count() > 0
+        ):
+            existing_analysis.status = "processing"
+            existing_analysis.error = None
+            existing_analysis.progress = min(existing_analysis.progress or 0, 99.9)
+            video.status = "processing"
+            db.commit()
+            bg_db = SessionLocal()
+            background_tasks.add_task(recover_knowledge_indexing_background, str(existing_analysis.id), bg_db)
+            return {"analysis_id": existing_analysis.id, "status": "recovering"}
             
     if reanalyze:
         # Delete old knowledge chunks to prevent duplicates
@@ -38,9 +75,12 @@ async def create_analysis(
     import os
     analysis = AnalysisSession(
         video_id=video.id,
-        model_provider=os.getenv("MODEL_PROVIDER", "mock")
+        model_provider=os.getenv("MODEL_PROVIDER", "mock"),
+        analysis_version=analysis_version,
+        model_version=model_version,
     )
     db.add(analysis)
+    video.status = "processing"
     db.commit()
     db.refresh(analysis)
     
@@ -79,6 +119,10 @@ def get_analysis_by_video(
         "id": str(analysis.id),
         "status": analysis.status,
         "progress": analysis.progress,
+        "analysis_version": analysis.analysis_version,
+        "model_version": analysis.model_version,
+        "processed_at": analysis.processed_at,
+        "error": analysis.error,
         "video_title": analysis.video.title,
         "video_id": str(analysis.video_id),
         "model_provider": analysis.model_provider,
@@ -100,6 +144,10 @@ def get_analysis_status(
         "id": str(analysis.id),
         "status": analysis.status,
         "progress": analysis.progress,
+        "analysis_version": analysis.analysis_version,
+        "model_version": analysis.model_version,
+        "processed_at": analysis.processed_at,
+        "error": analysis.error,
         "video_title": analysis.video.title,
         "video_id": str(analysis.video_id),
         "model_provider": analysis.model_provider,

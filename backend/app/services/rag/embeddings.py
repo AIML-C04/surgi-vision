@@ -15,10 +15,6 @@ def get_embedding_model():
 def generate_embeddings(texts: list[str]) -> list[list[float]]:
     if not texts:
         return []
-    try:
-        model = get_embedding_model()
-        embeddings = model.encode(texts)
-        return [emb.tolist() for emb in embeddings]
-    except Exception as e:
-        print(f"Embedding generation failed: {e}")
-        return []
+    model = get_embedding_model()
+    embeddings = model.encode(texts)
+    return [emb.tolist() for emb in embeddings]

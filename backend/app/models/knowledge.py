@@ -21,12 +21,14 @@ class VideoKnowledgeChunk(Base):
     
     id = Column(Uuid, primary_key=True, default=uuid.uuid4, index=True)
     video_id = Column(Uuid, ForeignKey("videos.id", ondelete="CASCADE"), nullable=False)
+    analysis_id = Column(Uuid, ForeignKey("analysis_sessions.id", ondelete="CASCADE"), nullable=True, index=True)
     user_id = Column(Uuid, ForeignKey("users.id", ondelete="CASCADE"), nullable=False)
     
     source_type = Column(String, nullable=False) # e.g. "detection", "transcript", "metadata"
     start_time = Column(Float)
     end_time = Column(Float)
     content = Column(Text, nullable=False)
+    chunk_metadata = Column("metadata", JSON)
     embedding_model = Column(String) # e.g. "all-MiniLM-L6-v2"
     
     embedding = Column(EmbeddingType)
@@ -34,6 +36,7 @@ class VideoKnowledgeChunk(Base):
     created_at = Column(DateTime(timezone=True), server_default=func.now())
     
     video = relationship("Video")
+    analysis = relationship("AnalysisSession")
     user = relationship("User")
 
 class Conversation(Base):
@@ -41,6 +44,7 @@ class Conversation(Base):
     
     id = Column(Uuid, primary_key=True, default=uuid.uuid4, index=True)
     video_id = Column(Uuid, ForeignKey("videos.id", ondelete="CASCADE"), nullable=False)
+    analysis_id = Column(Uuid, ForeignKey("analysis_sessions.id", ondelete="SET NULL"), nullable=True, index=True)
     user_id = Column(Uuid, ForeignKey("users.id", ondelete="CASCADE"), nullable=False)
     title = Column(String)
     

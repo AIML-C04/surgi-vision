@@ -7,6 +7,9 @@ import secrets
 import string
 import uuid
 import json
+from jose import JWTError, jwt
+from app.core.config import settings
+from app.services.live_intelligence import LiveInferenceSession
 from app.core.database import get_db, SessionLocal
 from app.api.deps import get_current_user
 from app.models.user import User
@@ -47,6 +50,7 @@ class LiveConnectionManager:
     def __init__(self):
         # session_id -> {"host": websocket, "client": websocket}
         self.active_sessions = {}
+        self.inference_sessions: dict[str, LiveInferenceSession] = {}
 
     async def connect(self, websocket: WebSocket, session_id: str, role: str):
         await websocket.accept()
@@ -70,20 +74,50 @@ class LiveConnectionManager:
 
 live_manager = LiveConnectionManager()
 
+
+def _authenticated_session(websocket: WebSocket, session_id: str):
+    token = websocket.query_params.get("token")
+    if not token:
+        return None
+    try:
+        claims = jwt.decode(token, settings.SECRET_KEY, algorithms=[settings.ALGORITHM])
+        user_id = uuid.UUID(str(claims.get("sub")))
+        session_uuid = uuid.UUID(session_id)
+    except (JWTError, ValueError, TypeError):
+        return None
+    db = SessionLocal()
+    session = db.query(LiveSession).filter(LiveSession.id == session_uuid, LiveSession.user_id == user_id).first()
+    db.close()
+    return session
+
+
+async def _send_live_update(websocket: WebSocket, payload: dict[str, Any]):
+    try:
+        await websocket.send_json(payload)
+    except Exception:
+        pass
+
 @router.websocket("/ws/{session_id}/{role}")
 async def live_websocket_endpoint(websocket: WebSocket, session_id: str, role: str):
-    # Basic auth should be done here in production via token in URL or initial message
-    # For this demo, we assume the pairing code was exchanged and verified before connecting
-    
-    db = SessionLocal()
-    session = db.query(LiveSession).filter(LiveSession.id == uuid.UUID(session_id)).first()
-    db.close()
+    if role not in {"host", "client"}:
+        await websocket.close(code=1008)
+        return
+    session = _authenticated_session(websocket, session_id)
     
     if not session or session.expires_at < datetime.utcnow() or session.status == "failed":
         await websocket.close(code=1008)
         return
         
     await live_manager.connect(websocket, session_id, role)
+    db = SessionLocal()
+    session.status = "active"
+    db.merge(session)
+    db.commit()
+    db.close()
+    if role == "host" and settings.LIVE_INFERENCE_ENABLED and session_id not in live_manager.inference_sessions:
+        engine = LiveInferenceSession(session_id, lambda payload: _send_live_update(websocket, payload), settings.LIVE_MAX_QUEUE_SIZE)
+        live_manager.inference_sessions[session_id] = engine
+        await engine.start()
     
     try:
         while True:
@@ -92,23 +126,27 @@ async def live_websocket_endpoint(websocket: WebSocket, session_id: str, role: s
             if "text" in message:
                 await live_manager.forward_message(message["text"], session_id, role)
             elif "bytes" in message and role == "host":
-                # Process frame through YOLO
-                from app.services.ai.processor import get_provider
                 import cv2
                 import numpy as np
-                
-                provider = get_provider()
                 nparr = np.frombuffer(message["bytes"], np.uint8)
                 frame = cv2.imdecode(nparr, cv2.IMREAD_COLOR)
-                
-                if frame is not None:
-                    prediction = provider.analyze_frame(0, 0, frame)
-                    await websocket.send_text(json.dumps({
-                        "type": "detections",
-                        "detections": prediction["detections"]
-                    }))
+                engine = live_manager.inference_sessions.get(session_id)
+                if frame is not None and engine:
+                    await engine.submit(frame)
     except WebSocketDisconnect:
         live_manager.disconnect(websocket, session_id, role)
+    finally:
+        if role == "host":
+            engine = live_manager.inference_sessions.pop(session_id, None)
+            if engine:
+                await engine.stop()
+        if not live_manager.active_sessions.get(session_id):
+            db = SessionLocal()
+            stored = db.query(LiveSession).filter(LiveSession.id == uuid.UUID(session_id)).first()
+            if stored:
+                stored.status = "completed"
+                db.commit()
+            db.close()
         
 @router.post("/verify")
 def verify_pairing_code(

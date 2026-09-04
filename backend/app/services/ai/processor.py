@@ -2,8 +2,9 @@ import os
 import asyncio
 import cv2
 import time
+from datetime import datetime, timezone
 from sqlalchemy.orm import Session
-from app.models.video import Video, AnalysisSession, Detection, Track, SurgicalPhase
+from app.models.video import Video, AnalysisSession, Detection, Track
 from app.services.ai.mock_provider import MockInferenceProvider
 
 # In-memory connection manager for simple WebSocket broadcasting
@@ -52,6 +53,53 @@ def get_provider():
     return _provider_instance
 
 
+async def recover_knowledge_indexing_background(analysis_id: str, db: Session):
+    """Finish an analysis that failed only after detections/events were persisted."""
+    from uuid import UUID
+
+    try:
+        session = db.query(AnalysisSession).filter(AnalysisSession.id == UUID(analysis_id)).first()
+        if not session:
+            return
+        video = db.query(Video).filter(Video.id == session.video_id).first()
+        if not video:
+            return
+
+        await manager.broadcast({"event": "analysis_started", "stage": "knowledge_indexing"}, analysis_id)
+        from app.services.rag.indexer import generate_knowledge_from_analysis
+        chunk_count = generate_knowledge_from_analysis(
+            db,
+            str(session.id),
+            str(session.video_id),
+            str(video.user_id),
+        )
+        if chunk_count == 0:
+            raise RuntimeError("Knowledge indexing produced no chunks from persisted analysis data")
+
+        session.status = "completed"
+        session.error = None
+        session.progress = 100.0
+        session.completed_at = datetime.now(timezone.utc)
+        session.processed_at = session.completed_at
+        video.status = "processed"
+        db.commit()
+        await manager.broadcast({"event": "analysis_completed", "knowledge_chunks": chunk_count}, analysis_id)
+    except Exception as exc:
+        db.rollback()
+        session = db.query(AnalysisSession).filter(AnalysisSession.id == UUID(analysis_id)).first()
+        if session:
+            session.status = "error"
+            session.error = f"Knowledge indexing failed: {exc}"
+            session.processed_at = datetime.now(timezone.utc)
+            video = db.query(Video).filter(Video.id == session.video_id).first()
+            if video:
+                video.status = "error"
+            db.commit()
+        await manager.broadcast({"event": "analysis_failed", "error": f"Knowledge indexing failed: {exc}"}, analysis_id)
+    finally:
+        db.close()
+
+
 async def process_video_background(analysis_id: str, video_duration: float, db: Session):
     """Processes a video frame by frame using the configured AI provider."""
     from uuid import UUID
@@ -66,13 +114,16 @@ async def process_video_background(analysis_id: str, video_duration: float, db: 
         return
         
     session.status = "processing"
+    session.error = None
     db.commit()
     
     try:
         provider = get_provider()
     except Exception as e:
         print(f"Provider load failed: {e}")
-        session.status = "failed"
+        session.status = "error"
+        session.error = str(e)
+        session.processed_at = datetime.now(timezone.utc)
         db.commit()
         await manager.broadcast({"event": "analysis_failed", "error": f"Model failed to load: {e}"}, analysis_id)
         return
@@ -98,7 +149,9 @@ async def process_video_background(analysis_id: str, video_duration: float, db: 
             print(f"Failed to download video: {e}")
             if os.path.exists(temp_file_path):
                 os.remove(temp_file_path)
-            session.status = "failed"
+            session.status = "error"
+            session.error = "Could not download remote video"
+            session.processed_at = datetime.now(timezone.utc)
             db.commit()
             await manager.broadcast({"event": "analysis_failed", "error": "Could not download remote video"}, analysis_id)
             return
@@ -110,7 +163,9 @@ async def process_video_background(analysis_id: str, video_duration: float, db: 
     if not cap.isOpened():
         if temp_file_path and os.path.exists(temp_file_path):
             os.remove(temp_file_path)
-        session.status = "failed"
+        session.status = "error"
+        session.error = "Could not open video file"
+        session.processed_at = datetime.now(timezone.utc)
         db.commit()
         await manager.broadcast({"event": "analysis_failed", "error": "Could not open video file"}, analysis_id)
         return
@@ -124,6 +179,7 @@ async def process_video_background(analysis_id: str, video_duration: float, db: 
     sample_rate = int(os.getenv("PROCESS_EVERY_N_FRAMES", 5)) # process 6 fps approx
     
     frame_id = 0
+    processed_frame_count = 0
     start_time = time.time()
     
     while cap.isOpened():
@@ -135,6 +191,7 @@ async def process_video_background(analysis_id: str, video_duration: float, db: 
         
         # Only process every Nth frame to simulate real-time processing constraints
         if frame_id % sample_rate == 0:
+            processed_frame_count += 1
             
             # Note: in real-provider, it takes the 'frame' array directly
             if isinstance(provider, MockInferenceProvider):
@@ -184,11 +241,10 @@ async def process_video_background(analysis_id: str, video_duration: float, db: 
     
     end_time = time.time()
     processing_time = end_time - start_time
+    session.processing_duration = processing_time
+    session.processed_frames = processed_frame_count
+    session.skipped_frames = max(0, total_frames - processed_frame_count)
     print(f"Video processing finished in {processing_time:.2f}s")
-    
-    session.status = "completed"
-    session.progress = 100.0
-    db.commit()
     
     # Generate Tracks from detections
     tracks_map = {}
@@ -213,11 +269,47 @@ async def process_video_background(analysis_id: str, video_duration: float, db: 
     
     db.commit()
 
+    # Derive temporal intelligence from persisted detections and tracks before indexing knowledge.
+    try:
+        from app.services.events.extractor import extract_events
+        event_count = extract_events(db, str(session.id))
+        print(f"Event extraction completed: analysis_id={session.id} events={event_count}")
+    except Exception as e:
+        print(f"Error generating events: {e}")
+        session.status = "error"
+        session.error = f"Event extraction failed: {e}"
+        session.processed_at = datetime.now(timezone.utc)
+        video.status = "error"
+        db.commit()
+        await manager.broadcast({"event": "analysis_failed", "error": session.error}, analysis_id)
+        return
+
+    try:
+        from app.services.phase_recognition import recognize_and_persist_phases
+        phase_result = recognize_and_persist_phases(db, session)
+        print(f"Phase recognition status: analysis_id={session.id} status={phase_result['status']}")
+    except Exception as e:
+        print(f"Phase recognition unavailable: {e}")
+
     # Generate knowledge chunks
     try:
         from app.services.rag.indexer import generate_knowledge_from_analysis
         generate_knowledge_from_analysis(db, str(session.id), str(session.video_id), str(video.user_id))
     except Exception as e:
         print(f"Error generating knowledge: {e}")
+        session.status = "error"
+        session.error = f"Knowledge indexing failed: {e}"
+        session.processed_at = datetime.now(timezone.utc)
+        video.status = "error"
+        db.commit()
+        await manager.broadcast({"event": "analysis_failed", "error": session.error}, analysis_id)
+        return
+
+    session.status = "completed"
+    session.progress = 100.0
+    session.completed_at = datetime.now(timezone.utc)
+    session.processed_at = session.completed_at
+    video.status = "processed"
+    db.commit()
     
     await manager.broadcast({"event": "analysis_completed"}, analysis_id)

@@ -6,7 +6,6 @@ from typing import Dict, Any, List
 class MockInferenceProvider(AIInferenceProvider):
     def __init__(self):
         self.instruments = ["Grasper", "Scissors", "Clipper", "Forceps"]
-        self.phases = ["Preparation", "Dissection", "Clipping", "Gallbladder Dissection", "Cleaning", "Closure"]
 
     def analyze_frame(self, frame_id: int, timestamp: float) -> Dict[str, Any]:
         """Returns mock analysis mimicking standard schema."""
@@ -29,10 +28,6 @@ class MockInferenceProvider(AIInferenceProvider):
             "frame_id": frame_id,
             "timestamp": timestamp,
             "detections": detections,
-            "phase": {
-                "name": self.phases[int(timestamp / 30) % len(self.phases)], # Change phase every 30 seconds
-                "confidence": round(random.uniform(0.80, 0.99), 2)
-            }
         }
         
     def detect_instruments(self, frame) -> List[Dict[str, Any]]:
@@ -41,9 +36,6 @@ class MockInferenceProvider(AIInferenceProvider):
     def track_instruments(self, frame, previous_tracks) -> List[Dict[str, Any]]:
         return []
         
-    def recognize_phase(self, frame_buffer) -> Dict[str, Any]:
-        return {}
-
 class AnalysisTaskGenerator:
     """Simulates background video processing by emitting WebSocket messages."""
     pass

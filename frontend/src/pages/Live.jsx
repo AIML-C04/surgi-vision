@@ -1,12 +1,15 @@
 import React, { useState, useEffect, useRef } from 'react';
 import axios from 'axios';
 import { Activity, Camera, Link, XCircle, PlaySquare } from 'lucide-react';
+import { AuthContext } from '../context/AuthContext';
 
 const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:8000';
 
 const Live = () => {
   const [role, setRole] = useState(null); // 'host' (laptop) or 'client' (mobile)
   const [sessionData, setSessionData] = useState(null);
+  const [liveIntelligence, setLiveIntelligence] = useState(null);
+  const { token } = React.useContext(AuthContext);
   const [pairingCode, setPairingCode] = useState('');
   const [status, setStatus] = useState('Idle');
   
@@ -14,6 +17,7 @@ const Live = () => {
   const peerConnection = useRef(null);
   const localVideoRef = useRef(null);
   const remoteVideoRef = useRef(null);
+    const inferenceTimerRef = useRef(null);
   
   // Create Session (Host)
   const createSession = async () => {
@@ -52,12 +56,12 @@ const Live = () => {
   const connectWebSocket = (sessionId, userRole) => {
       let wsUrl = '';
       if (API_URL.startsWith('http://')) {
-          wsUrl = API_URL.replace('http://', 'ws://') + `/api/v1/live/ws/${sessionId}/${userRole}`;
+          wsUrl = API_URL.replace('http://', 'ws://') + `/api/v1/live/ws/${sessionId}/${userRole}?token=${encodeURIComponent(token || '')}`;
       } else if (API_URL.startsWith('https://')) {
-          wsUrl = API_URL.replace('https://', 'wss://') + `/api/v1/live/ws/${sessionId}/${userRole}`;
+          wsUrl = API_URL.replace('https://', 'wss://') + `/api/v1/live/ws/${sessionId}/${userRole}?token=${encodeURIComponent(token || '')}`;
       } else {
           const wsProtocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
-          wsUrl = `${wsProtocol}//${window.location.host}/api/v1/live/ws/${sessionId}/${userRole}`;
+          wsUrl = `${wsProtocol}//${window.location.host}/api/v1/live/ws/${sessionId}/${userRole}?token=${encodeURIComponent(token || '')}`;
       }
       
       const socket = new WebSocket(wsUrl);
@@ -79,6 +83,11 @@ const Live = () => {
           setDetections(message.detections);
           return;
       }
+          if (message.type === 'live_intelligence') {
+            setDetections(message.detections || []);
+            setLiveIntelligence(message);
+            return;
+          }
       
       if (!peerConnection.current) setupPeerConnection();
       
@@ -101,7 +110,7 @@ const Live = () => {
       const canvas = document.createElement('canvas');
       const ctx = canvas.getContext('2d');
       
-      setInterval(() => {
+      inferenceTimerRef.current = setInterval(() => {
           if (remoteVideoRef.current.readyState === remoteVideoRef.current.HAVE_ENOUGH_DATA) {
               canvas.width = remoteVideoRef.current.videoWidth;
               canvas.height = remoteVideoRef.current.videoHeight;
@@ -114,13 +123,17 @@ const Live = () => {
                   }
               }, 'image/jpeg', 0.8);
           }
-      }, 200); // 5 FPS
+            }, 200);
   };
 
   useEffect(() => {
       if (status === 'Receiving Stream') {
           startInferenceLoop();
       }
+      return () => {
+        if (inferenceTimerRef.current) clearInterval(inferenceTimerRef.current);
+        inferenceTimerRef.current = null;
+      };
   }, [status]);
 
   const mediaRecorderRef = useRef(null);
@@ -336,6 +349,11 @@ const Live = () => {
           </div>
           
           <div className="flex justify-end space-x-4">
+                      <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
+                        <div className="bg-dark-800 p-5 rounded-xl border border-dark-700"><h3 className="text-sm font-semibold text-white mb-3">Live Inference</h3><p className="text-gray-400 text-sm">Status: <span className="text-primary-300">{liveIntelligence?.model_status === 'real' ? 'Processing' : liveIntelligence?.model_status === 'test_mock' ? 'Test mock' : liveIntelligence?.model_status === 'unavailable' ? 'Live model unavailable' : 'Waiting'}</span></p><p className="text-gray-400 text-sm mt-1">Latency: <span className="text-gray-200">{liveIntelligence?.latency_ms ?? 'Not available'} ms</span></p><p className="text-gray-400 text-sm mt-1">Dropped frames: <span className="text-gray-200">{liveIntelligence?.dropped_frames ?? 0}</span></p></div>
+                        <div className="bg-dark-800 p-5 rounded-xl border border-dark-700"><h3 className="text-sm font-semibold text-white mb-3">Currently Detected</h3>{liveIntelligence?.detections?.length ? liveIntelligence.detections.map((detection, index) => <p key={`${detection.frame_id}-${index}`} className="text-sm text-gray-300 flex justify-between"><span>{detection.class} {detection.track_id ? `#${detection.track_id}` : ''}</span><span>{Math.round(detection.confidence * 100)}%</span></p>) : <p className="text-sm text-gray-500">No current model detections.</p>}</div>
+                        <div className="bg-dark-800 p-5 rounded-xl border border-dark-700"><h3 className="text-sm font-semibold text-white mb-3">Recent Model Events</h3>{liveIntelligence?.recent_events?.length ? liveIntelligence.recent_events.slice(-4).reverse().map((event, index) => <p key={`${event.event_type}-${event.timestamp}-${index}`} className="text-xs text-gray-300 mb-2"><span className="text-gray-500">{Number(event.timestamp || 0).toFixed(1)}s</span> {event.event_type.replaceAll('_', ' ')}<span className="block text-gray-500">{event.instrument || event.instruments?.join(' + ')}</span></p>) : <p className="text-sm text-gray-500">No recent model-derived events.</p>}</div>
+                      </div>
              <button onClick={discardRecording} className="bg-dark-700 hover:bg-dark-600 text-white px-6 py-3 rounded-xl font-medium transition-colors border border-dark-600">
               Discard & End Session
             </button>

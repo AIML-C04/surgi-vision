@@ -25,6 +25,8 @@ SurgiVision AI is a platform for analyzing surgical videos. It allows authentica
 
 **Live Architecture**: Provides endpoints for creating WebRTC live sessions. Uses secure pairing codes and backend WebSocket signaling for peer-to-peer connections. Note that production deployments across NATs will strictly require configured STUN/TURN servers.
 
+Live intelligence uses the authenticated live WebSocket as its existing transport. Host frames are sampled by the browser and processed by a bounded, latest-frame worker using the configured instrument provider. Live state is ephemeral and includes normalized detections, active tracks, debounced model-derived events, latency, and dropped-frame counts. `LIVE_INFERENCE_ENABLED=false` disables inference, while `MODEL_PROVIDER=real` is required for real model output; `MODEL_PROVIDER=mock` is labeled as test mock output.
+
 ## Security
 - Server-side tenant isolation for all resources preventing IDOR.
 - JWT authentication with hashed passwords.
@@ -41,6 +43,7 @@ DATABASE_URL=sqlite:///./surgivision.db
 
 STORAGE_PROVIDER=local
 MODEL_PROVIDER=mock
+PHASE_MODEL_PROVIDER=none
 LLM_PROVIDER=mock
 SECRET_KEY=yoursecretkey
 VITE_API_URL=http://localhost:8000

@@ -1,7 +1,7 @@
 import React, { useContext } from 'react';
 import { Outlet, Link, useNavigate, useLocation } from 'react-router-dom';
 import { AuthContext } from '../context/AuthContext';
-import { Activity, LayoutDashboard, Video, LogOut, Upload } from 'lucide-react';
+import { Activity, LayoutDashboard, Video, LogOut, Upload, GitCompare } from 'lucide-react';
 
 const Layout = () => {
   const { logout, user } = useContext(AuthContext);
@@ -18,6 +18,7 @@ const Layout = () => {
     { name: 'Upload Video', path: '/upload', icon: <Upload size={20} /> },
     { name: 'Live Stream', path: '/live', icon: <Activity size={20} /> },
     { name: 'Research Eval', path: '/research', icon: <LayoutDashboard size={20} /> },
+    { name: 'Compare Procedures', path: '/compare', icon: <GitCompare size={20} /> },
   ];
 
   return (

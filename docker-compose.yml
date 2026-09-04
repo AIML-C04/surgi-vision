@@ -25,6 +25,13 @@ services:
       - SECRET_KEY=${SECRET_KEY:-supersecretkey}
       - MODEL_PROVIDER=${MODEL_PROVIDER:-mock}
       - MODEL_ENDPOINT=${MODEL_ENDPOINT:-}
+      - LLM_PROVIDER=${LLM_PROVIDER:-huggingface}
+      - HF_TOKEN=${HF_TOKEN}
+      - LLM_MODEL=${LLM_MODEL:-mistralai/Mixtral-8x7B-Instruct-v0.1}
+      - STORAGE_PROVIDER=${STORAGE_PROVIDER:-local}
+      - SUPABASE_URL=${SUPABASE_URL}
+      - SUPABASE_SERVICE_ROLE_KEY=${SUPABASE_SERVICE_ROLE_KEY}
+      - SUPABASE_BUCKET=${SUPABASE_BUCKET:-surgivision-videos}
     volumes:
       - ./backend:/app
       - ./backend/uploads:/app/uploads

@@ -27,6 +27,9 @@ class Settings(BaseSettings):
     
     MODEL_PROVIDER: str = os.getenv("MODEL_PROVIDER", "mock")
     MODEL_ENDPOINT: str = os.getenv("MODEL_ENDPOINT", "")
+    PHASE_MODEL_PROVIDER: str = os.getenv("PHASE_MODEL_PROVIDER", "none")
+    LIVE_INFERENCE_ENABLED: bool = os.getenv("LIVE_INFERENCE_ENABLED", "true").lower() == "true"
+    LIVE_MAX_QUEUE_SIZE: int = int(os.getenv("LIVE_MAX_QUEUE_SIZE", "1"))
     
     class Config:
         case_sensitive = True

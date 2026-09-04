@@ -56,26 +56,10 @@ class RealInferenceProvider(AIInferenceProvider):
                         "track_id": track_id
                     })
                     
-        return {
-            "frame_id": frame_id,
-            "timestamp": timestamp,
-            "detections": detections,
-            "phase": {
-                "name": "Not available",
-                "confidence": 0.0
-            }
-        }
+        return {"frame_id": frame_id, "timestamp": timestamp, "detections": detections}
         
     def _empty_result(self, frame_id: int, timestamp: float) -> Dict[str, Any]:
-        return {
-            "frame_id": frame_id,
-            "timestamp": timestamp,
-            "detections": [],
-            "phase": {
-                "name": "Not available",
-                "confidence": 0.0
-            }
-        }
+        return {"frame_id": frame_id, "timestamp": timestamp, "detections": []}
 
     def detect_instruments(self, frame) -> List[Dict[str, Any]]:
         pass
@@ -83,5 +67,3 @@ class RealInferenceProvider(AIInferenceProvider):
     def track_instruments(self, frame, previous_tracks) -> List[Dict[str, Any]]:
         pass
         
-    def recognize_phase(self, frame_buffer) -> Dict[str, Any]:
-        pass

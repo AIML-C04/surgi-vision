@@ -1,4 +1,4 @@
-from sqlalchemy import Column, String, Float, ForeignKey, DateTime, Integer, Uuid, JSON
+from sqlalchemy import Column, String, Float, ForeignKey, DateTime, Integer, Uuid, JSON, Text
 from sqlalchemy.sql import func
 from sqlalchemy.orm import relationship
 from app.core.database import Base
@@ -27,10 +27,17 @@ class AnalysisSession(Base):
     id = Column(Uuid, primary_key=True, default=uuid.uuid4, index=True)
     video_id = Column(Uuid, ForeignKey("videos.id"), nullable=False)
     model_provider = Column(String, nullable=False) # mock, local, huggingface
+    analysis_version = Column(String, nullable=False, default="1")
+    model_version = Column(String)
     status = Column(String, default="pending") # pending, processing, completed, error
     progress = Column(Float, default=0.0)
     created_at = Column(DateTime(timezone=True), server_default=func.now())
     completed_at = Column(DateTime(timezone=True))
+    processed_at = Column(DateTime(timezone=True))
+    processing_duration = Column(Float)
+    processed_frames = Column(Integer)
+    skipped_frames = Column(Integer)
+    error = Column(Text)
     
     # Store the final generated report path or structured data
     report_data = Column(JSON)
@@ -39,6 +46,7 @@ class AnalysisSession(Base):
     detections = relationship("Detection", back_populates="analysis", cascade="all, delete")
     tracks = relationship("Track", back_populates="analysis", cascade="all, delete")
     phases = relationship("SurgicalPhase", back_populates="analysis", cascade="all, delete")
+    events = relationship("SurgicalEvent", back_populates="analysis", cascade="all, delete")
 
 class Detection(Base):
     __tablename__ = "detections"
@@ -76,5 +84,10 @@ class SurgicalPhase(Base):
     start_time = Column(Float, nullable=False)
     end_time = Column(Float)
     confidence = Column(Float)
+    model_provider = Column(String)
+    model_version = Column(String)
+    taxonomy_version = Column(String)
+    evidence = Column(JSON)
+    created_at = Column(DateTime(timezone=True), server_default=func.now())
     
     analysis = relationship("AnalysisSession", back_populates="phases")

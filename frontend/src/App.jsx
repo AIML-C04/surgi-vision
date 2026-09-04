@@ -7,7 +7,9 @@ import Dashboard from './pages/Dashboard';
 import UploadVideo from './pages/UploadVideo';
 import Analysis from './pages/Analysis';
 import Research from './pages/Research';
+import Report from './pages/Report';
 import Live from './pages/Live';
+import Comparison from './pages/Comparison';
 import Layout from './components/Layout';
 import ScrollToTop from './components/ScrollToTop';
 
@@ -30,6 +32,8 @@ function App() {
             <Route index element={<Dashboard />} />
             <Route path="upload" element={<UploadVideo />} />
             <Route path="analysis/:id" element={<Analysis />} />
+            <Route path="report/:id" element={<Report />} />
+            <Route path="compare" element={<Comparison />} />
             <Route path="research" element={<Research />} />
             <Route path="live" element={<Live />} />
           </Route>

@@ -22,7 +22,7 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from app.core.database import Base
 from app.core.config import settings
-from app.models import User, Video, AnalysisSession, Detection, Track, SurgicalPhase
+from app.models import User, Video, AnalysisSession, Detection, Track, SurgicalPhase, SurgicalEvent, EvaluationDataset, EvaluationRun
 
 target_metadata = Base.metadata
 
