@@ -8,30 +8,52 @@ export const AuthContext = createContext();
 export const AuthProvider = ({ children }) => {
   const [user, setUser] = useState(null);
   const [token, setToken] = useState(localStorage.getItem('token') || null);
-  const [loading, setLoading] = useState(true);
+  // States: 'INITIALIZING', 'AUTHENTICATED', 'UNAUTHENTICATED'
+  const [authState, setAuthState] = useState('INITIALIZING');
 
-  useEffect(() => {
-    if (token) {
-      axios.defaults.headers.common['Authorization'] = `Bearer ${token}`;
-      fetchUser();
-    } else {
-      setLoading(false);
-    }
-  }, [token]);
-
-  const fetchUser = async () => {
-    try {
-      const res = await axios.get(`${API_URL}/api/v1/auth/me`);
-      setUser(res.data);
-    } catch (err) {
-      console.error("Failed to fetch user", err);
-      logout();
-    } finally {
-      setLoading(false);
-    }
+  const logout = () => {
+    localStorage.removeItem('token');
+    setToken(null);
+    setUser(null);
+    delete axios.defaults.headers.common['Authorization'];
+    setAuthState('UNAUTHENTICATED');
   };
 
+  useEffect(() => {
+    const interceptor = axios.interceptors.response.use(
+      (response) => response,
+      (error) => {
+        if (error.response && error.response.status === 401) {
+          logout();
+        }
+        return Promise.reject(error);
+      }
+    );
+    return () => axios.interceptors.response.eject(interceptor);
+  }, []);
+
+  useEffect(() => {
+    const initAuth = async () => {
+      if (token) {
+        axios.defaults.headers.common['Authorization'] = `Bearer ${token}`;
+        try {
+          const res = await axios.get(`${API_URL}/api/v1/auth/me`);
+          setUser(res.data);
+          setAuthState('AUTHENTICATED');
+        } catch (err) {
+          console.error("Failed to fetch user", err);
+          logout(); // This will set state to UNAUTHENTICATED
+        }
+      } else {
+        setAuthState('UNAUTHENTICATED');
+      }
+    };
+    
+    initAuth();
+  }, []); // Only run once on mount
+
   const login = async (email, password) => {
+    setAuthState('INITIALIZING');
     const formData = new URLSearchParams();
     formData.append('username', email);
     formData.append('password', password);
@@ -43,7 +65,17 @@ export const AuthProvider = ({ children }) => {
     const newToken = res.data.access_token;
     localStorage.setItem('token', newToken);
     setToken(newToken);
-    return res.data;
+    axios.defaults.headers.common['Authorization'] = `Bearer ${newToken}`;
+    
+    try {
+        const userRes = await axios.get(`${API_URL}/api/v1/auth/me`);
+        setUser(userRes.data);
+        setAuthState('AUTHENTICATED');
+        return res.data;
+    } catch (err) {
+        logout();
+        throw err;
+    }
   };
 
   const register = async (email, password, fullName, role) => {
@@ -56,15 +88,11 @@ export const AuthProvider = ({ children }) => {
     return res.data;
   };
 
-  const logout = () => {
-    localStorage.removeItem('token');
-    setToken(null);
-    setUser(null);
-    delete axios.defaults.headers.common['Authorization'];
-  };
+  const loading = authState === 'INITIALIZING';
+  const isAuthenticated = authState === 'AUTHENTICATED';
 
   return (
-    <AuthContext.Provider value={{ user, token, loading, login, register, logout }}>
+    <AuthContext.Provider value={{ user, token, loading, isAuthenticated, login, register, logout }}>
       {children}
     </AuthContext.Provider>
   );

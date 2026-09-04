@@ -13,13 +13,27 @@ router = APIRouter()
 @router.post("/", response_model=Any)
 async def create_analysis(
     video_id: UUID,
-    background_tasks: BackgroundTasks,
+    reanalyze: bool = False,
+    background_tasks: BackgroundTasks = None,
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user)
 ):
     video = db.query(Video).filter(Video.id == video_id, Video.user_id == current_user.id).first()
     if not video:
         raise HTTPException(status_code=404, detail="Video not found")
+        
+    existing_analysis = db.query(AnalysisSession).filter(
+        AnalysisSession.video_id == video.id
+    ).order_by(AnalysisSession.created_at.desc()).first()
+    
+    if existing_analysis and not reanalyze:
+        if existing_analysis.status in ["processing", "completed"]:
+            return {"analysis_id": existing_analysis.id, "status": existing_analysis.status}
+            
+    if reanalyze:
+        # Delete old knowledge chunks to prevent duplicates
+        from app.models.knowledge import VideoKnowledgeChunk
+        db.query(VideoKnowledgeChunk).filter(VideoKnowledgeChunk.video_id == video.id).delete()
         
     import os
     analysis = AnalysisSession(
@@ -46,6 +60,31 @@ async def websocket_endpoint(websocket: WebSocket, analysis_id: str):
     except WebSocketDisconnect:
         manager.disconnect(websocket, analysis_id)
 
+@router.get("/by-video/{video_id}")
+def get_analysis_by_video(
+    video_id: UUID,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user)
+):
+    video = db.query(Video).filter(Video.id == video_id, Video.user_id == current_user.id).first()
+    if not video:
+        raise HTTPException(status_code=404, detail="Video not found")
+        
+    analysis = db.query(AnalysisSession).filter(AnalysisSession.video_id == video.id).order_by(AnalysisSession.created_at.desc()).first()
+    if not analysis:
+        raise HTTPException(status_code=404, detail="Analysis not found")
+    
+    import os
+    return {
+        "id": str(analysis.id),
+        "status": analysis.status,
+        "progress": analysis.progress,
+        "video_title": analysis.video.title,
+        "video_id": str(analysis.video_id),
+        "model_provider": analysis.model_provider,
+        "llm_provider": os.getenv("LLM_PROVIDER", "huggingface")
+    }
+
 @router.get("/{analysis_id}")
 def get_analysis_status(
     analysis_id: UUID,
@@ -56,11 +95,39 @@ def get_analysis_status(
     if not analysis or analysis.video.user_id != current_user.id:
         raise HTTPException(status_code=404, detail="Analysis not found")
     
+    import os
     return {
         "id": str(analysis.id),
         "status": analysis.status,
         "progress": analysis.progress,
         "video_title": analysis.video.title,
         "video_id": str(analysis.video_id),
-        "model_provider": analysis.model_provider
+        "model_provider": analysis.model_provider,
+        "llm_provider": os.getenv("LLM_PROVIDER", "huggingface")
     }
+
+@router.get("/{analysis_id}/detections")
+def get_analysis_detections(
+    analysis_id: UUID,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user)
+):
+    analysis = db.query(AnalysisSession).filter(AnalysisSession.id == analysis_id).first()
+    if not analysis or analysis.video.user_id != current_user.id:
+        raise HTTPException(status_code=404, detail="Analysis not found")
+        
+    detections = db.query(Detection).filter(Detection.analysis_id == analysis_id).order_by(Detection.timestamp).all()
+    
+    grouped = {}
+    for d in detections:
+        ts = round(d.timestamp, 1)
+        if ts not in grouped:
+            grouped[ts] = []
+        grouped[ts].append({
+            "class": d.class_name,
+            "confidence": d.confidence,
+            "bbox": d.bbox,
+            "track_id": d.track_id
+        })
+        
+    return grouped

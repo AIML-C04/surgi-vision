@@ -68,15 +68,48 @@ async def process_video_background(analysis_id: str, video_duration: float, db: 
     session.status = "processing"
     db.commit()
     
-    provider = get_provider()
+    try:
+        provider = get_provider()
+    except Exception as e:
+        print(f"Provider load failed: {e}")
+        session.status = "failed"
+        db.commit()
+        await manager.broadcast({"event": "analysis_failed", "error": f"Model failed to load: {e}"}, analysis_id)
+        return
     
     video = db.query(Video).filter(Video.id == session.video_id).first()
-    video_path = video.file_path
     
+    import tempfile
+    import urllib.request
+    
+    if os.getenv("STORAGE_PROVIDER", "local") == "local":
+        video_path = os.path.join("uploads", video.file_path)
+        temp_file_path = None
+    else:
+        from app.services.storage.provider import get_storage_provider
+        storage = get_storage_provider()
+        video_url = storage.get_file_url(video.file_path)
+        # Download to temporary file
+        fd, temp_file_path = tempfile.mkstemp(suffix=".mp4")
+        os.close(fd)
+        try:
+            urllib.request.urlretrieve(video_url, temp_file_path)
+        except Exception as e:
+            print(f"Failed to download video: {e}")
+            if os.path.exists(temp_file_path):
+                os.remove(temp_file_path)
+            session.status = "failed"
+            db.commit()
+            await manager.broadcast({"event": "analysis_failed", "error": "Could not download remote video"}, analysis_id)
+            return
+        video_path = temp_file_path
+        
     await manager.broadcast({"event": "analysis_started"}, analysis_id)
     
     cap = cv2.VideoCapture(video_path)
     if not cap.isOpened():
+        if temp_file_path and os.path.exists(temp_file_path):
+            os.remove(temp_file_path)
         session.status = "failed"
         db.commit()
         await manager.broadcast({"event": "analysis_failed", "error": "Could not open video file"}, analysis_id)
@@ -143,6 +176,11 @@ async def process_video_background(analysis_id: str, video_duration: float, db: 
         frame_id += 1
 
     cap.release()
+    if temp_file_path and os.path.exists(temp_file_path):
+        try:
+            os.remove(temp_file_path)
+        except OSError as e:
+            print(f"Failed to remove temp file: {e}")
     
     end_time = time.time()
     processing_time = end_time - start_time

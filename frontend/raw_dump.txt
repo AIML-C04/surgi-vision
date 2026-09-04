@@ -1,0 +1,466 @@
+Created At: 2026-09-03T18:06:45+05:30
+Completed At: 2026-09-03T18:06:45+05:30
+File Path: `file:///c:/6136/MAJOR%20PROJECT/Surgi_vision/frontend/src/pages/Analysis.jsx`
+Total Lines: 458
+Total Bytes: 20997
+Showing lines 1 to 458
+The following code has been modified to include a line number before every line, in the format: <line_number>: <original_line>. Please note that any changes targeting the original code should remove the line number, colon, and leading space.
+1: import React, { useState, useEffect, useRef, useContext } from 'react';
+2: import { useParams } from 'react-router-dom';
+3: import axios from 'axios';
+4: import { Activity, Clock, Play, Pause, AlertTriangle, MessageSquare, Send, Brain, Target, Info, Loader2 } from 'lucide-react';
+5: import { ResponsiveContainer, AreaChart, Area, XAxis, YAxis, Tooltip } from 'recharts';
+6: import { AuthContext } from '../context/AuthContext';
+7: 
+8: const Analysis = () => {
+9:   const { id } = useParams();
+10:   const [analysis, setAnalysis] = useState(null);
+11:   const [wsStatus, setWsStatus] = useState('Connecting...');
+12:   const [progress, setProgress] = useState(0);
+13:   const [currentFrame, setCurrentFrame] = useState(null);
+14:   const [events, setEvents] = useState([]);
+15:   const [allDetections, setAllDetections] = useState({});
+16:   const [timelineData, setTimelineData] = useState([{time: 0, confidence: 0}]);
+17:   const { token } = useContext(AuthContext);
+18:   
+19:   // Chat state
+20:   const [messages, setMessages] = useState([{ role: 'assistant', content: 'Hello! I can answer questions about this specific video based on the processed knowledge. What would you like to know?' }]);
+21:   const [chatInput, setChatInput] = useState('');
+22:   const [chatLoading, setChatLoading] = useState(false);
+23:   const messagesEndRef = useRef(null);
+24: 
+25:   const ws = useRef(null);
+26:   const videoRef = useRef(null);
+27:   const detectionsCacheRef = useRef({});
+28: 
+29:   useEffect(() => {
+30:     let isMounted = true;
+31:     
+32:     const fetchStatus = async () => {
+33:       try {
+34:         const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:8000';
+35:         const config = { headers: { Authorization: `Bearer ${token}` } };
+36:         const res = await axios.get(`${API_URL}/api/v1/analysis/${id}`, config);
+37:         
+38:         if (res.data.status === 'completed') {
+39:             try {
+40:                 const detRes = await axios.get(`${API_URL}/api/v1/analysis/${id}/detections`, config);
+41:                 detectionsCacheRef.current = detRes.data;
+42:                 setAllDetections(detRes.data);
+43:             } catch(e) {
+44:                 console.error("Failed to fetch all detections", e);
+45:             }
+46:         }
+47:         
+48:         let video_url = null;
+49:         if (res.data.video_id) {
+50:             try {
+51:                 const urlRes = await axios.get(`${API_URL}/api/v1/videos/${res.data.video_id}/url`, config);
+52:                 let vUrl = urlRes.data.url;
+53:                 if (vUrl && vUrl.startsWith('/')) {
+54:                     vUrl = API_URL + vUrl;
+55:                 }
+56:                 video_url = vUrl;
+57:             } catch (err) {
+58:                 console.error("Failed to fetch video URL", err);
+59:             }
+60:         }
+61:         
+62:         if (isMounted) {
+63:           setAnalysis({ ...res.data, video_url });
+64:           setProgress(res.data.progress || 0);
+65:         }
+66:       } catch (err) {
+67:         console.error("Failed to fetch analysis", err);
+68:       }
+69:     };
+70:     fetchStatus();
+71: 
+72:     const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:8000';
+73:     let wsUrl = '';
+74:     if (API_URL.startsWith('http://')) {
+75:         wsUrl = API_URL.replace('http://', 'ws://') + `/api/v1/analysis/ws/${id}`;
+76:     } else if (API_URL.startsWith('https://')) {
+77:         wsUrl = API_URL.replace('https://', 'wss://') + `/api/v1/analysis/ws/${id}`;
+78:     } else {
+79:         const wsProtocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
+80:         wsUrl = `${wsProtocol}//${window.location.host}/api/v1/analysis/ws/${id}`;
+81:     }
+82:     
+83:     const socket = new WebSocket(wsUrl);
+84:     ws.current = socket;
+85: 
+86:     socket.onopen = () => {
+87:       if (isMounted) setWsStatus('Connected (Live)');
+88:     };
+89:     
+90:     socket.onerror = (error) => {
+91:       if (isMounted) setWsStatus('Error connecting');
+92:     };
+93: 
+94:     socket.onclose = () => {
+95:       if (isMounted) setWsStatus('Disconnected');
+96:     };
+97:     
+98:     socket.onmessage = (event) => {
+99:       if (!isMounted) return;
+100:       const data = JSON.parse(event.data);
+101:       
+102:       if (data.event === 'analysis_started') {
+103:         setAnalysis(prev => ({ ...prev, status: 'processing' }));
+104:       } else if (data.event === 'frame_processed') {
+105:         setProgress(data.progress);
+106:         setCurrentFrame(data.prediction);
+107:         
+108:         const ts = Math.round(data.prediction.timestamp * 10) / 10;
+109:         if (data.prediction.detections && data.prediction.detections.length > 0) {
+110:            detectionsCacheRef.current[ts] = data.prediction.detections;
+111:         } else {
+112:            detectionsCacheRef.current[ts] = [];
+113:         }
+114:         
+115:         if (data.prediction.frame_id % 15 === 0) {
+116:           setTimelineData(prev => [...prev, {
+117:             time: Math.round(data.prediction.timestamp),
+118:             confidence: data.prediction.phase?.confidence ? data.prediction.phase.confidence * 100 : 0
+119:           }].slice(-50));
+120:         }
+121:         
+122:       } else if (data.event === 'analysis_completed') {
+123:         setAnalysis(prev => ({ ...prev, status: 'completed' }));
+124:         setProgress(100);
+125:         setAllDetections({...detectionsCacheRef.current});
+126:       } else if (data.event === 'analysis_failed') {
+127:         setAnalysis(prev => ({ ...prev, status: 'failed' }));
+128:         setWsStatus('Analysis Failed: ' + data.error);
+129:       }
+130:     };
+131: 
+132:     return () => {
+133:       isMounted = false;
+134:       if (socket.readyState === WebSocket.OPEN) {
+135:         socket.close();
+136:       }
+137:     };
+138:   }, [id, token]);
+139: 
+140:   useEffect(() => {
+141:     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
+142:   }, [messages]);
+143: 
+144:   const handleSendMessage = async (e) => {
+145:     e.preventDefault();
+146:     if (!chatInput.trim() || !analysis?.video_id) return;
+147: 
+148:     const userMessage = chatInput.trim();
+149:     setMessages(prev => [...prev, { role: 'user', content: userMessage }]);
+150:     setChatInput('');
+151:     setChatLoading(true);
+152: 
+153:     try {
+154:       const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:8000';
+155:       const res = await axios.post(`${API_URL}/api/v1/chat/`, {
+156:         video_id: analysis.video_id,
+157:         query: userMessage
+158:       }, {
+159:         headers: { Authorization: `Bearer ${token}` }
+160:       });
+161: 
+162:       let content = res.data.answer;
+163:       if (res.data.evidence && res.data.evidence.length > 0) {
+164:         const timestamps = [...new Set(res.data.evidence.map(e => Math.round(e.timestamp)))];
+165:         content += `\n\n*(Evidence found at: ${timestamps.map(t => t + 's').join(', ')})*`;
+166:       }
+167: 
+168:       setMessages(prev => [...prev, { role: 'assistant', content }]);
+169:     } catch (err) {
+170:       setMessages(prev => [...prev, { role: 'assistant', content: "Sorry, I couldn't process that query." }]);
+171:     } finally {
+172:       setChatLoading(false);
+173:     }
+174:   };
+175:   
+176:   const jumpToTime = (time) => {
+177:     if (videoRef.current) {
+178:         videoRef.current.currentTime = time;
+179:         videoRef.current.play();
+180:     }
+181:   };
+182: 
+183:   const handleTimeUpdate = () => {
+184:     if (!videoRef.current || analysis?.status !== 'completed') return;
+185:     
+186:     const ct = videoRef.current.currentTime;
+187:     const cache = detectionsCacheRef.current;
+188:     if (!cache || Object.keys(cache).length === 0) return;
+189:     
+190:     // Find closest timestamp
+191:     const times = Object.keys(cache).map(Number).sort((a,b) => a - b);
+192:     
+193:     // Binary search or simple find closest
+194:     let closest = times[0];
+195:     let minDiff = Math.abs(ct - closest);
+196:     
+197:     for (let t of times) {
+198:        const diff = Math.abs(ct - t);
+199:        if (diff < minDiff) {
+200:            minDiff = diff;
+201:            closest = t;
+202:        }
+203:     }
+204:     
+205:     // Only show if we are within 0.5s of the frame
+206:     if (minDiff < 0.5) {
+207:        setCurrentFrame({
+208:            timestamp: closest,
+209:            detections: cache[closest] || []
+210:        });
+211:     } else {
+212:        setCurrentFrame({
+213:            timestamp: ct,
+214:            detections: []
+215:        });
+216:     }
+217:   };
+218: 
+219:   const BoundingBoxOverlay = () => {
+220:     if (!currentFrame || !currentFrame.detections) return null;
+221:     return (
+222:       <div className="absolute inset-0 pointer-events-none">
+223:         {currentFrame.detections.map((det, i) => {
+224:           const scaleX = 100 / 640;
+225:           const scaleY = 100 / 384;
+226:           const left = det.bbox[0] * scaleX;
+227:           const top = det.bbox[1] * scaleY;
+228:           const width = (det.bbox[2] - det.bbox[0]) * scaleX;
+229:           const height = (det.bbox[3] - det.bbox[1]) * scaleY;
+230:           
+231:           return (
+232:             <div 
+233:               key={i}
+234:               className="absolute border-2 border-primary-500 rounded-sm bg-primary-500/10 transition-all duration-75"
+235:               style={{ left: `${left}%`, top: `${top}%`, width: `${width}%`, height: `${height}%` }}
+236:             >
+237:               <div className="absolute -top-6 left-0 bg-primary-500 text-white text-xs px-2 py-0.5 rounded shadow whitespace-nowrap font-medium">
+238:                 {det.class} #{det.track_id} — {Math.round(det.confidence * 100)}%
+239:               </div>
+240:             </div>
+241:           );
+242:         })}
+243:       </div>
+244:     );
+245:   };
+246: 
+247:   return (
+248:     <div className="flex h-full bg-dark-900">
+249:       {/* Left Column - Video & Timeline */}
+250:       <div className="flex-1 flex flex-col p-6 space-y-4 overflow-y-auto">
+251:         <div className="flex justify-between items-center mb-2">
+252:           <div>
+253:             <h1 className="text-2xl font-bold text-white flex items-center">
+254:               {analysis?.video_title || 'Loading Video Workspace...'}
+255:             </h1>
+256:             <div className="flex items-center space-x-4 mt-2 text-sm text-gray-400">
+257:               <span className={`flex items-center ${wsStatus.includes('Connected') ? 'text-green-500' : 'text-gray-500'}`}>
+258:                 <Activity size={16} className="mr-1.5"/> {wsStatus}
+259:               </span>
+260:               <span className="flex items-center">
+261:                 <Clock size={16} className="mr-1.5"/> {Math.round(progress)}% Processed
+262:               </span>
+263:             </div>
+264:           </div>
+265:           <div className="flex flex-col items-end">
+266:              {analysis?.status === 'completed' && (
+267:                 <div className="bg-green-500/10 text-green-400 px-3 py-1 rounded-full text-xs font-semibold border border-green-500/20 mb-2">
+268:                   Analysis Complete
+269:                 </div>
+270:              )}
+271:           </div>
+272:         </div>
+273: 
+274:         {/* Video Player Container */}
+275:         <div className="bg-black rounded-2xl overflow-hidden relative border border-dark-700 shadow-xl aspect-video flex-shrink-0 group">
+276:           {analysis?.video_url ? (
+277:             <video 
+278:               ref={videoRef}
+279:               src={analysis.video_url} 
+280:               controls 
+281:               className="w-full h-full object-contain"
+282:               crossOrigin="anonymous"
+283:               onTimeUpdate={handleTimeUpdate}
+284:             />
+285:           ) : (
+286:             <div className="w-full h-full flex flex-col items-center justify-center text-dark-600 space-y-4">
+287:                <Loader2 className="animate-spin w-8 h-8" />
+288:                <p>Loading Secure Video Stream...</p>
+289:             </div>
+290:           )}
+291:           <BoundingBoxOverlay />
+292:         </div>
+293:         
+294:         {/* Real YOLO Details / Tracking */}
+295:         <div className="grid grid-cols-2 gap-4">
+296:             <div className="bg-dark-800 rounded-xl border border-dark-700 p-5 shadow-sm">
+297:                 <div className="flex justify-between items-center mb-4">
+298:                     <h3 className="font-semibold text-white flex items-center"><Target size={18} className="mr-2 text-primary-500"/> Live Detections (YOLO)</h3>
+299:                     <span className="text-xs bg-dark-700 px-2 py-1 rounded text-gray-400">Current Frame</span>
+300:                 </div>
+301:                 <div className="space-y-3 max-h-48 overflow-y-auto pr-2">
+302:                   {currentFrame?.detections?.map((det, i) => (
+303:                     <div key={i} className="flex items-center justify-between bg-dark-900 p-3 rounded-lg border border-dark-700 hover:border-primary-500/30 transition-colors">
+304:                       <div className="flex items-center space-x-3">
+305:                         <div className="w-2.5 h-2.5 rounded-full bg-primary-500 animate-pulse"></div>
+306:                         <span className="font-medium text-white">{det.class}</span>
+307:                       </div>
+308:                       <div className="text-right">
+309:                         <span className="text-xs text-gray-400 block font-mono">Track #{det.track_id}</span>
+310:                         <span className="text-sm font-semibold text-primary-400">{Math.round(det.confidence * 100)}%</span>
+311:                       </div>
+312:                     </div>
+313:                   ))}
+314:                   {(!currentFrame?.detections || currentFrame.detections.length === 0) && (
+315:                     <div className="text-center text-gray-500 py-8 border border-dashed border-dark-600 rounded-lg">
+316:                         No instruments detected in current frame.
+317:                     </div>
+318:                   )}
+319:                 </div>
+320:             </div>
+321: 
+322:             <div className="bg-dark-800 rounded-xl border border-dark-700 p-5 shadow-sm flex flex-col">
+323:                 <h3 className="font-semibold text-white flex items-center mb-4"><Info size={18} className="mr-2 text-blue-500"/> Surgical Phase Recognition</h3>
+324:                 <div className="flex-1 flex flex-col items-center justify-center text-center p-6 bg-dark-900 border border-dark-700 border-dashed rounded-xl">
+325:                     <AlertTriangle className="text-yellow-500 mb-3" size={32} />
+326:                     <p className="text-gray-300 font-medium mb-1">Phase recognition unavailable</p>
+327:                     <p className="text-sm text-gray-500">There is currently no validated surgical phase recognition model loaded for this deployment.</p>
+328:                 </div>
+329:             </div>
+330:         </div>
+331: 
+332:         {/* Pipeline Status */}
+333:         <div className="bg-dark-800 rounded-xl border border-dark-700 p-5 shadow-sm flex flex-col mb-4">
+334:             <h3 className="font-semibold text-white flex items-center mb-4"><Activity size={18} className="mr-2 text-green-500"/> AI Pipeline Status</h3>
+335:             <div className="grid grid-cols-5 gap-2 text-sm text-center">
+336:                 <div className="flex flex-col items-center">
+337:                     <span className="text-gray-400 mb-1">AI Engine</span>
+338:                     <span className={analysis?.model_provider === 'real' ? 'text-green-400 font-semibold' : 'text-yellow-400 font-semibold'}>● {analysis?.model_provider === 'real' ? 'Ready' : 'Mock/Simulated'}</span>
+339:                 </div>
+340:                 <div className="flex flex-col items-center border-l border-dark-600">
+341:                     <span className="text-gray-400 mb-1">Video Analysis</span>
+342:                     <span className={analysis?.status === 'completed' ? 'text-green-400 font-semibold' : 'text-blue-400 font-semibold'}>● {analysis?.status === 'completed' ? 'Complete' : (analysis?.status === 'processing' ? `Processing ${Math.round(progress)}%` : 'Waiting')}</span>
+343:                 </div>
+344:                 <div className="flex flex-col items-center border-l border-dark-600">
+345:                     <span className="text-gray-400 mb-1">Knowledge</span>
+346:                     <span className={analysis?.status === 'completed' ? 'text-green-400 font-semibold' : 'text-gray-500 font-semibold'}>● {analysis?.status === 'completed' ? 'Ready' : 'Pending'}</span>
+347:                 </div>
+348:                 <div className="flex flex-col items-center border-l border-dark-600">
+349:                     <span className="text-gray-400 mb-1">Embeddings</span>
+350:                     <span className={analysis?.status === 'completed' ? 'text-green-400 font-semibold' : 'text-gray-500 font-semibold'}>● {analysis?.status === 'completed' ? 'Ready' : 'Pending'}</span>
+351:                 </div>
+352:                 <div className="flex flex-col items-center border-l border-dark-600">
+353:                     <span className="text-gray-400 mb-1">Q&A</span>
+354:                     <span className={analysis?.llm_provider === 'mock' ? 'text-yellow-400 font-semibold' : 'text-green-400 font-semibold'}>● {analysis?.llm_provider === 'mock' ? 'Mock Mode' : 'Ready'}</span>
+355:                 </div>
+356:             </div>
+357:         </div>
+358: 
+359:         {/* Timeline Chart */}
+360:         <div className="h-48 bg-dark-800 rounded-xl border border-dark-700 p-5 shadow-sm flex-shrink-0">
+361:           <h3 className="text-sm font-semibold text-white mb-4">Detection Confidence Timeline</h3>
+362:           <div className="h-32 w-full">
+363:             <ResponsiveContainer width="100%" height="100%">
+364:               <AreaChart data={timelineData}>
+365:                 <defs>
+366:                   <linearGradient id="colorConf" x1="0" y1="0" x2="0" y2="1">
+367:                     <stop offset="5%" stopColor="#3b82f6" stopOpacity={0.8}/>
+368:                     <stop offset="95%" stopColor="#3b82f6" stopOpacity={0}/>
+369:                   </linearGradient>
+370:                 </defs>
+371:                 <XAxis dataKey="time" hide />
+372:                 <YAxis hide domain={[0, 100]} />
+373:                 <Tooltip contentStyle={{ backgroundColor: '#1e293b', border: '1px solid #334155', borderRadius: '8px', color: '#f3f4f6' }}/>
+374:                 <Area type="monotone" dataKey="confidence" stroke="#3b82f6" strokeWidth={2} fillOpacity={1} fill="url(#colorConf)" isAnimationActive={false} />
+375:               </AreaChart>
+376:             </ResponsiveContainer>
+377:           </div>
+378:         </div>
+379:       </div>
+380: 
+381:       {/* Right Column - Q&A Workspace */}
+382:       <div className="w-96 border-l border-dark-700 bg-dark-800 flex flex-col">
+383:         <div className="p-4 border-b border-dark-700 bg-dark-800 flex items-center space-x-3">
+384:           <div className="p-2 bg-accent-500/20 rounded-lg">
+385:              <Brain className="text-accent-400" size={20} />
+386:           </div>
+387:           <div>
+388:               <h2 className="font-bold text-white">SurgiVision AI Assistant</h2>
+389:               <p className="text-xs text-gray-400">Context: This specific video</p>
+390:           </div>
+391:         </div>
+392:         
+393:         <div className="flex-1 overflow-y-auto p-4 space-y-4">
+394:           {messages.map((msg, idx) => (
+395:             <div key={idx} className={`flex flex-col ${msg.role === 'user' ? 'items-end' : 'items-start'}`}>
+396:               <div className={`max-w-[85%] rounded-2xl px-4 py-3 text-sm shadow-sm ${
+397:                 msg.role === 'user' 
+398:                   ? 'bg-primary-600 text-white rounded-br-none' 
+399:                   : 'bg-dark-700 text-gray-100 rounded-bl-none border border-dark-600'
+400:               }`}>
+401:                 {msg.content.split('\n').map((line, i) => {
+402:                     // Render timestamp evidence as clickable links
+403:                     if (line.startsWith('*(Evidence')) {
+404:                         const parts = line.match(/\d+s/g) || [];
+405:                         let rendered = line;
+406:                         return (
+407:                             <span key={i} className="block mt-2 text-accent-300 text-xs italic">
+408:                                 Evidence found at: {parts.map((p, j) => (
+409:                                     <button key={j} onClick={() => jumpToTime(parseInt(p))} className="hover:underline text-accent-400 ml-1">{p}</button>
+410:                                 ))}
+411:                             </span>
+412:                         );
+413:                     }
+414:                     return <span key={i} className="block">{line}</span>;
+415:                 })}
+416:               </div>
+417:             </div>
+418:           ))}
+419:           {chatLoading && (
+420:             <div className="flex items-start">
+421:               <div className="bg-dark-700 text-gray-100 rounded-2xl rounded-bl-none px-4 py-3 text-sm flex items-center space-x-2 border border-dark-600">
+422:                 <Loader2 size={14} className="animate-spin text-accent-400" />
+423:                 <span className="text-gray-400">Retrieving video context...</span>
+424:               </div>
+425:             </div>
+426:           )}
+427:           <div ref={messagesEndRef} />
+428:         </div>
+429: 
+430:         <div className="p-4 bg-dark-900 border-t border-dark-700">
+431:           <form onSubmit={handleSendMessage} className="relative">
+432:             <input
+433:               type="text"
+434:               value={chatInput}
+435:               onChange={(e) => setChatInput(e.target.value)}
+436:               placeholder="Ask about events in this video..."
+437:               disabled={chatLoading || !analysis?.video_id}
+438:               className="w-full bg-dark-800 border border-dark-600 rounded-full pl-4 pr-12 py-3 text-sm text-white focus:outline-none focus:border-accent-500 focus:ring-1 focus:ring-accent-500 transition-colors placeholder-gray-500"
+439:             />
+440:             <button 
+441:               type="submit" 
+442:               disabled={!chatInput.trim() || chatLoading || !analysis?.video_id}
+443:               className="absolute right-1.5 top-1.5 p-1.5 bg-accent-600 hover:bg-accent-500 text-white rounded-full transition-colors disabled:bg-dark-600 disabled:text-gray-400"
+444:             >
+445:               <Send size={16} />
+446:             </button>
+447:           </form>
+448:           <div className="mt-2 text-center">
+449:             <span className="text-[10px] text-gray-500">AI answers are grounded exclusively in extracted knowledge from this recording.</span>
+450:           </div>
+451:         </div>
+452:       </div>
+453:     </div>
+454:   );
+455: };
+456: 
+457: export default Analysis;
+458: 
+The above content shows the entire, complete file contents of the requested file.

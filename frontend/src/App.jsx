@@ -9,11 +9,12 @@ import Analysis from './pages/Analysis';
 import Research from './pages/Research';
 import Live from './pages/Live';
 import Layout from './components/Layout';
+import ScrollToTop from './components/ScrollToTop';
 
 const ProtectedRoute = ({ children }) => {
-  const { user, loading } = useContext(AuthContext);
-  if (loading) return <div className="h-screen w-full flex items-center justify-center bg-dark-900 text-white">Loading...</div>;
-  if (!user) return <Navigate to="/login" />;
+  const { loading, isAuthenticated } = useContext(AuthContext);
+  if (loading) return <div className="h-screen w-full flex items-center justify-center bg-dark-900 text-white font-medium text-lg">Authenticating...</div>;
+  if (!isAuthenticated) return <Navigate to="/login" />;
   return children;
 };
 
@@ -21,6 +22,7 @@ function App() {
   return (
     <AuthProvider>
       <Router>
+        <ScrollToTop />
         <Routes>
           <Route path="/login" element={<Login />} />
           <Route path="/register" element={<Register />} />

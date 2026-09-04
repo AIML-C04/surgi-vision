@@ -84,3 +84,44 @@ def get_video_url(
         
     url = storage.get_file_url(video.file_path)
     return {"url": url}
+
+@router.delete("/{video_id}")
+def delete_video(
+    video_id: str,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user)
+) -> Any:
+    from uuid import UUID
+    try:
+        vid_uuid = UUID(video_id)
+    except ValueError:
+        raise HTTPException(status_code=400, detail="Invalid video ID format")
+        
+    video = db.query(Video).filter(Video.id == vid_uuid, Video.user_id == current_user.id).first()
+    if not video:
+        raise HTTPException(status_code=404, detail="Video not found")
+        
+    # Delete related knowledge chunks manually (if cascade is not fully configured)
+    from app.models.knowledge import VideoKnowledgeChunk
+    from app.models.video import AnalysisSession, Detection, Track
+    
+    db.query(VideoKnowledgeChunk).filter(VideoKnowledgeChunk.video_id == vid_uuid).delete()
+    
+    # Delete analysis sessions and related tracking/detections
+    sessions = db.query(AnalysisSession).filter(AnalysisSession.video_id == vid_uuid).all()
+    for session in sessions:
+        db.query(Detection).filter(Detection.analysis_id == session.id).delete()
+        db.query(Track).filter(Track.analysis_id == session.id).delete()
+        db.delete(session)
+        
+    # Delete from storage
+    try:
+        storage.delete_file(video.file_path)
+    except Exception as e:
+        print(f"Failed to delete storage object: {e}")
+        
+    # Delete video record
+    db.delete(video)
+    db.commit()
+    
+    return {"status": "success", "message": "Video deleted"}

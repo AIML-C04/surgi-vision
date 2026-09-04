@@ -6,19 +6,22 @@ export default {
   ],
   theme: {
     extend: {
+      fontFamily: {
+        sans: ['Inter', 'sans-serif'],
+      },
       colors: {
         dark: {
-          600: '#475569', // Slate 600
-          900: '#0f172a', // Slate 900
-          800: '#1e293b', // Slate 800
-          700: '#334155', // Slate 700
+          600: '#475569',
+          900: '#0f172a',
+          800: '#1e293b',
+          700: '#334155',
         },
         primary: {
-          500: '#3b82f6', // Blue 500
-          600: '#2563eb', // Blue 600
+          500: '#3b82f6',
+          600: '#2563eb',
         },
         accent: {
-          500: '#8b5cf6', // Violet 500
+          500: '#8b5cf6',
         }
       }
     },

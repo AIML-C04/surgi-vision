@@ -11,7 +11,6 @@ from app.models.knowledge import Conversation, Message, VideoKnowledgeChunk
 from app.services.rag.llm import get_llm_provider
 
 router = APIRouter()
-llm = get_llm_provider()
 
 class ChatRequest(BaseModel):
     query: str
@@ -73,6 +72,7 @@ def ask_question(
     context_text = "\n".join([f"[{c.start_time}s]: {c.content}" for c in relevant_chunks])
     
     # Ask LLM
+    llm = get_llm_provider()
     answer = llm.ask(req.query, context_text)
     
     # Create conversation if not exists
@@ -92,7 +92,7 @@ def ask_question(
             
     # Format evidence
     evidence = []
-    if "NOT AVAILABLE" not in answer:
+    if "Insufficient evidence" not in answer and "NOT AVAILABLE" not in answer:
         for c in relevant_chunks[:3]:
             evidence.append(Evidence(timestamp=c.start_time, text=c.content))
             

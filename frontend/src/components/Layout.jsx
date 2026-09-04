@@ -14,10 +14,10 @@ const Layout = () => {
   };
 
   const navItems = [
-    { name: 'Dashboard', path: '/', icon: <LayoutDashboard size={20} /> },
+    { name: 'Video Workspace', path: '/', icon: <Video size={20} /> },
     { name: 'Upload Video', path: '/upload', icon: <Upload size={20} /> },
-    { name: 'Video Library', path: '/library', icon: <Video size={20} /> },
-    { name: 'Research', path: '/research', icon: <Activity size={20} /> },
+    { name: 'Live Stream', path: '/live', icon: <Activity size={20} /> },
+    { name: 'Research Eval', path: '/research', icon: <LayoutDashboard size={20} /> },
   ];
 
   return (

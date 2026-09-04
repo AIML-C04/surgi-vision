@@ -1,3 +1,4 @@
+@import '@fontsource/inter';
 @tailwind base;
 @tailwind components;
 @tailwind utilities;
@@ -17,7 +18,7 @@
   @apply bg-dark-800;
 }
 ::-webkit-scrollbar-thumb {
-  @apply bg-dark-700 rounded;
+  @apply bg-dark-700 rounded-full;
 }
 ::-webkit-scrollbar-thumb:hover {
   @apply bg-dark-600;

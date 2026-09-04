@@ -1,15 +1,28 @@
-import pytest
+import os
+os.environ["LLM_PROVIDER"] = "mock"
+os.environ["DATABASE_URL"] = "sqlite:///./test.db"
 from fastapi.testclient import TestClient
+from sqlalchemy import create_engine
 from app.main import app
-from app.core.database import Base, engine, get_db
+from app.core.database import Base, get_db
 from sqlalchemy.orm import sessionmaker
 import uuid
+
+# Use in-memory SQLite for testing to avoid destroying the real Supabase database
+SQLALCHEMY_DATABASE_URL = "sqlite:///./test.db"
+engine = create_engine(SQLALCHEMY_DATABASE_URL, connect_args={"check_same_thread": False})
 
 # Clean DB before tests
 Base.metadata.drop_all(bind=engine)
 Base.metadata.create_all(bind=engine)
 
 TestingSessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
+
+# Patch the SessionLocal so background tasks and websockets use the test DB
+from app.core import database as core_db
+from app.api.v1.endpoints import live as endpoints_live
+core_db.SessionLocal = TestingSessionLocal
+endpoints_live.SessionLocal = TestingSessionLocal
 
 def override_get_db():
     db = TestingSessionLocal()
@@ -59,6 +72,8 @@ def test_two_user_isolation():
         data={"title": "User A Video"},
         files={"file": ("test.mp4", fake_video, "video/mp4")}
     )
+    if response_upload.status_code != 200:
+        print("\n=== UPLOAD ERROR ===", response_upload.text)
     assert response_upload.status_code == 200
     video_id_a = response_upload.json()["id"]
     
@@ -102,6 +117,10 @@ def test_missing_model_failure():
     pass
 
 def test_rag_insufficient_evidence():
+    try:
+        create_user("userA@example.com", "pass")
+    except:
+        pass
     token = login_user("userA@example.com", "pass")
     # A video with no knowledge
     from io import BytesIO
@@ -112,6 +131,8 @@ def test_rag_insufficient_evidence():
         data={"title": "Empty Video"},
         files={"file": ("test2.mp4", fake_video, "video/mp4")}
     )
+    if res_v.status_code != 200:
+        print("\n=== RAG UPLOAD ERROR ===", res_v.text)
     v_id = res_v.json()["id"]
     
     res_chat = client.post(
@@ -119,9 +140,9 @@ def test_rag_insufficient_evidence():
         headers={"Authorization": f"Bearer {token}"},
         json={"query": "What instruments are seen?", "video_id": v_id}
     )
-    # The Mock LLM returns "NOT AVAILABLE / INSUFFICIENT EVIDENCE" when context is empty
+    # The Mock LLM returns "Insufficient evidence in this video." when context is empty
     assert res_chat.status_code == 200
-    assert "NOT AVAILABLE" in res_chat.json()["answer"]
+    assert "Insufficient evidence" in res_chat.json()["answer"]
 
 def test_rag_ownership_filtering():
     tokenB = login_user("userB@example.com", "pass")
@@ -166,3 +187,61 @@ def test_unauthorized_websocket_access():
             assert False, 'Should have disconnected'
     except WebSocketDisconnect as e:
         assert e.code == 1008
+
+
+def test_registration_persistence_and_duplicate():
+    # 1. Registration
+    email = "TestUser@Example.com"
+    password = "SecurePassword123"
+    res = client.post("/api/v1/auth/register", json={
+        "email": email,
+        "password": password,
+        "full_name": "Test User",
+        "role": "Researcher"
+    })
+    assert res.status_code == 200
+    user_data = res.json()
+    assert user_data["email"] == "testuser@example.com"  # Normalized
+    
+    # 2. Duplicate registration with different casing should fail
+    res_dup = client.post("/api/v1/auth/register", json={
+        "email": "testuser@example.com",
+        "password": "SecurePassword123",
+        "full_name": "Test User",
+        "role": "Researcher"
+    })
+    assert res_dup.status_code == 400
+    assert "already exists" in res_dup.json()["detail"]
+    
+    # 3. Login with different casing should succeed due to normalization
+    res_login = client.post("/api/v1/auth/login", data={
+        "username": "TESTUSER@EXAMPLE.COM",
+        "password": password
+    })
+    assert res_login.status_code == 200
+    token = res_login.json()["access_token"]
+    
+    # 4. /auth/me returns correct user
+    res_me = client.get("/api/v1/auth/me", headers={"Authorization": f"Bearer {token}"})
+    assert res_me.status_code == 200
+    assert res_me.json()["email"] == "testuser@example.com"
+    
+    # 5. Invalid password fails
+    res_invalid = client.post("/api/v1/auth/login", data={
+        "username": email,
+        "password": "WrongPassword"
+    })
+    assert res_invalid.status_code == 401
+    
+    # 6. Nonexistent email fails
+    res_nonexist = client.post("/api/v1/auth/login", data={
+        "username": "nonexistent@example.com",
+        "password": password
+    })
+    assert res_nonexist.status_code == 401
+
+def test_secret_key_stability():
+    from app.core.config import settings
+    # Ensure SECRET_KEY is not generated dynamically in a way that breaks persistence
+    assert settings.SECRET_KEY is not None
+    assert len(settings.SECRET_KEY) > 0

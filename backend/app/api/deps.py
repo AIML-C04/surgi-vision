@@ -22,13 +22,14 @@ def get_current_user(
         token_data = TokenPayload(**payload)
     except JWTError:
         raise HTTPException(
-            status_code=status.HTTP_403_FORBIDDEN,
+            status_code=status.HTTP_401_UNAUTHORIZED,
             detail="Could not validate credentials",
+            headers={"WWW-Authenticate": "Bearer"},
         )
     
     from uuid import UUID
     user = db.query(User).filter(User.id == UUID(token_data.sub)).first()
     
     if not user:
-        raise HTTPException(status_code=404, detail="User not found")
+        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="User not found")
     return user

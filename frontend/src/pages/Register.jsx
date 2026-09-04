@@ -9,67 +9,84 @@ const Register = () => {
   const [fullName, setFullName] = useState('');
   const [role, setRole] = useState('Researcher');
   const [error, setError] = useState('');
+  const [loading, setLoading] = useState(false);
   const { register } = useContext(AuthContext);
   const navigate = useNavigate();
 
   const handleSubmit = async (e) => {
     e.preventDefault();
+    setLoading(true);
     try {
       await register(email, password, fullName, role);
       navigate('/login');
     } catch (err) {
       setError(err.response?.data?.detail || 'Failed to register');
+      setLoading(false);
     }
   };
 
   return (
-    <div className="min-h-screen bg-dark-900 flex items-center justify-center p-4">
-      <div className="max-w-md w-full bg-dark-800 rounded-xl shadow-lg border border-dark-700 p-8">
-        <div className="flex flex-col items-center mb-8">
-          <Activity className="text-primary-500 mb-4" size={48} />
-          <h1 className="text-2xl font-bold text-white">Create Account</h1>
-          <p className="text-gray-400 mt-2">Join SurgiVision AI Platform</p>
+    <div className="min-h-screen bg-dark-900 flex items-center justify-center p-4 relative overflow-hidden">
+      {/* Background decoration */}
+      <div className="absolute top-1/4 left-1/4 w-96 h-96 bg-primary-900/20 rounded-full blur-3xl pointer-events-none"></div>
+      <div className="absolute bottom-1/4 right-1/4 w-96 h-96 bg-blue-900/10 rounded-full blur-3xl pointer-events-none"></div>
+      
+      <div className="max-w-md w-full bg-dark-800/80 backdrop-blur-xl rounded-2xl shadow-2xl border border-dark-700 p-8 relative z-10">
+        <div className="flex flex-col items-center mb-10">
+          <div className="bg-dark-900 p-4 rounded-2xl border border-dark-700 shadow-inner mb-4">
+            <Activity className="text-primary-500" size={40} />
+          </div>
+          <h1 className="text-3xl font-bold text-white tracking-tight">Create Account</h1>
+          <p className="text-gray-400 mt-2 font-medium">Join SurgiVision AI Platform</p>
         </div>
 
-        {error && <div className="bg-red-500/10 border border-red-500/50 text-red-500 p-3 rounded-lg mb-6 text-sm">{error}</div>}
+        {error && (
+            <div className="bg-red-500/10 border border-red-500/30 text-red-400 p-4 rounded-xl mb-6 text-sm font-medium flex items-center">
+                <div className="w-1.5 h-1.5 bg-red-500 rounded-full mr-2"></div>
+                {error}
+            </div>
+        )}
 
         <form onSubmit={handleSubmit} className="space-y-4">
           <div>
-            <label className="block text-sm font-medium text-gray-300 mb-1">Full Name</label>
+            <label className="block text-sm font-semibold text-gray-300 mb-1.5 ml-1">Full Name</label>
             <input
               type="text"
               value={fullName}
               onChange={(e) => setFullName(e.target.value)}
-              className="w-full bg-dark-900 border border-dark-700 rounded-lg px-4 py-2.5 text-white focus:outline-none focus:ring-2 focus:ring-primary-500"
+              className="w-full bg-dark-900 border border-dark-700 rounded-xl px-4 py-3 text-white focus:outline-none focus:ring-2 focus:ring-primary-500/50 focus:border-primary-500 transition-all shadow-inner"
               required
+              placeholder="Dr. Jane Doe"
             />
           </div>
           <div>
-            <label className="block text-sm font-medium text-gray-300 mb-1">Email Address</label>
+            <label className="block text-sm font-semibold text-gray-300 mb-1.5 ml-1">Email Address</label>
             <input
               type="email"
               value={email}
               onChange={(e) => setEmail(e.target.value)}
-              className="w-full bg-dark-900 border border-dark-700 rounded-lg px-4 py-2.5 text-white focus:outline-none focus:ring-2 focus:ring-primary-500"
+              className="w-full bg-dark-900 border border-dark-700 rounded-xl px-4 py-3 text-white focus:outline-none focus:ring-2 focus:ring-primary-500/50 focus:border-primary-500 transition-all shadow-inner"
               required
+              placeholder="name@institution.edu"
             />
           </div>
           <div>
-            <label className="block text-sm font-medium text-gray-300 mb-1">Password</label>
+            <label className="block text-sm font-semibold text-gray-300 mb-1.5 ml-1">Password</label>
             <input
               type="password"
               value={password}
               onChange={(e) => setPassword(e.target.value)}
-              className="w-full bg-dark-900 border border-dark-700 rounded-lg px-4 py-2.5 text-white focus:outline-none focus:ring-2 focus:ring-primary-500"
+              className="w-full bg-dark-900 border border-dark-700 rounded-xl px-4 py-3 text-white focus:outline-none focus:ring-2 focus:ring-primary-500/50 focus:border-primary-500 transition-all shadow-inner"
               required
+              placeholder="••••••••"
             />
           </div>
           <div>
-            <label className="block text-sm font-medium text-gray-300 mb-1">Role</label>
+            <label className="block text-sm font-semibold text-gray-300 mb-1.5 ml-1">Role</label>
             <select
               value={role}
               onChange={(e) => setRole(e.target.value)}
-              className="w-full bg-dark-900 border border-dark-700 rounded-lg px-4 py-2.5 text-white focus:outline-none focus:ring-2 focus:ring-primary-500"
+              className="w-full bg-dark-900 border border-dark-700 rounded-xl px-4 py-3 text-white focus:outline-none focus:ring-2 focus:ring-primary-500/50 focus:border-primary-500 transition-all shadow-inner appearance-none"
             >
               <option value="Student">Student</option>
               <option value="Researcher">Researcher</option>
@@ -77,14 +94,15 @@ const Register = () => {
           </div>
           <button
             type="submit"
-            className="w-full bg-primary-600 hover:bg-primary-500 text-white font-medium py-2.5 rounded-lg transition-colors mt-4"
+            disabled={loading}
+            className="w-full bg-primary-600 hover:bg-primary-500 text-white font-bold py-3.5 rounded-xl transition-colors shadow-lg shadow-primary-600/20 disabled:opacity-50 mt-6"
           >
-            Register
+            {loading ? 'Creating Account...' : 'Register Access'}
           </button>
         </form>
 
-        <p className="mt-6 text-center text-gray-400 text-sm">
-          Already have an account? <Link to="/login" className="text-primary-400 hover:text-primary-300">Sign In</Link>
+        <p className="mt-8 text-center text-gray-400 text-sm font-medium">
+          Already have an account? <Link to="/login" className="text-primary-400 hover:text-primary-300 hover:underline">Sign In</Link>
         </p>
       </div>
     </div>

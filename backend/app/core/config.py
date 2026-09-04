@@ -1,5 +1,13 @@
 import os
+from pathlib import Path
+from dotenv import load_dotenv
 from pydantic_settings import BaseSettings
+
+# Explicitly load .env from the project root
+root_dir = Path(__file__).resolve().parents[3]
+env_path = root_dir / ".env"
+if env_path.exists():
+    load_dotenv(dotenv_path=env_path)
 
 class Settings(BaseSettings):
     API_V1_STR: str = "/api/v1"

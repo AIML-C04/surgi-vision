@@ -50,9 +50,18 @@ const Live = () => {
   // ...
 
   const connectWebSocket = (sessionId, userRole) => {
-    const wsUrl = API_URL.replace('http', 'ws');
-    const socket = new WebSocket(`${wsUrl}/api/v1/live/ws/${sessionId}/${userRole}`);
-    ws.current = socket;
+      let wsUrl = '';
+      if (API_URL.startsWith('http://')) {
+          wsUrl = API_URL.replace('http://', 'ws://') + `/api/v1/live/ws/${sessionId}/${userRole}`;
+      } else if (API_URL.startsWith('https://')) {
+          wsUrl = API_URL.replace('https://', 'wss://') + `/api/v1/live/ws/${sessionId}/${userRole}`;
+      } else {
+          const wsProtocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
+          wsUrl = `${wsProtocol}//${window.location.host}/api/v1/live/ws/${sessionId}/${userRole}`;
+      }
+      
+      const socket = new WebSocket(wsUrl);
+      ws.current = socket;
     
     socket.onopen = () => setStatus('Connected to Signaling');
     socket.onmessage = async (event) => {
@@ -244,33 +253,49 @@ const Live = () => {
   };
 
   return (
-    <div className="p-6 h-full">
-      <h1 className="text-2xl font-bold mb-6">Live Session</h1>
+    <div className="p-8 h-full max-w-6xl mx-auto">
+      <div className="mb-8">
+        <h1 className="text-3xl font-bold text-white tracking-tight">Live Broadcast Studio</h1>
+        <p className="text-gray-400 mt-1">Connect a remote camera device for real-time surgical inference.</p>
+      </div>
       
       {!role && (
-        <div className="flex gap-8">
-          <div className="bg-dark-800 p-6 rounded-xl border border-dark-700 w-1/2">
-            <h2 className="text-lg font-bold mb-4">Start as Host (Laptop)</h2>
-            <p className="text-gray-400 mb-4 text-sm">Create a session and generate a pairing code for your mobile device.</p>
-            <button onClick={createSession} className="bg-primary-600 hover:bg-primary-500 text-white px-4 py-2 rounded font-medium flex items-center">
-              <PlaySquare size={18} className="mr-2"/> Create Session
+        <div className="grid md:grid-cols-2 gap-8">
+          <div className="bg-dark-800 p-8 rounded-2xl border border-dark-700 shadow-sm hover:border-primary-500/50 transition-all flex flex-col items-start group">
+            <div className="bg-primary-500/10 p-4 rounded-xl mb-6 group-hover:scale-105 transition-transform">
+              <PlaySquare size={32} className="text-primary-400"/>
+            </div>
+            <h2 className="text-2xl font-bold text-white mb-2">Host Analysis Session</h2>
+            <p className="text-gray-400 mb-8 leading-relaxed">
+              Create a secure P2P WebRTC session on this machine. You will generate a pairing code to stream video from a mobile device and process the inference locally.
+            </p>
+            <button onClick={createSession} className="w-full bg-primary-600 hover:bg-primary-500 text-white px-6 py-3 rounded-xl font-medium flex items-center justify-center space-x-2 transition-colors mt-auto shadow-lg shadow-primary-600/20">
+              <PlaySquare size={20} /> 
+              <span>Create Session</span>
             </button>
           </div>
           
-          <div className="bg-dark-800 p-6 rounded-xl border border-dark-700 w-1/2">
-            <h2 className="text-lg font-bold mb-4">Join as Client (Mobile Camera)</h2>
-            <form onSubmit={joinSession} className="flex flex-col space-y-4">
+          <div className="bg-dark-800 p-8 rounded-2xl border border-dark-700 shadow-sm hover:border-blue-500/50 transition-all flex flex-col items-start group">
+             <div className="bg-blue-500/10 p-4 rounded-xl mb-6 group-hover:scale-105 transition-transform">
+              <Camera size={32} className="text-blue-400"/>
+            </div>
+            <h2 className="text-2xl font-bold text-white mb-2">Join as Camera Client</h2>
+            <p className="text-gray-400 mb-6 leading-relaxed">
+              Use this device as the sterile field camera. Enter the 6-digit pairing code from the host machine to begin streaming securely.
+            </p>
+            <form onSubmit={joinSession} className="w-full flex flex-col mt-auto space-y-4">
               <input 
                 type="text" 
-                placeholder="6-digit Pairing Code" 
+                placeholder="Enter 6-digit code" 
                 value={pairingCode}
                 onChange={e => setPairingCode(e.target.value)}
-                className="bg-dark-900 border border-dark-600 rounded p-2 text-white"
+                className="bg-dark-900 border border-dark-600 rounded-xl px-4 py-3 text-white text-center text-xl tracking-widest font-mono focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-all placeholder:text-dark-600 placeholder:text-base placeholder:font-sans placeholder:tracking-normal"
                 maxLength={6}
                 required
               />
-              <button type="submit" className="bg-blue-600 hover:bg-blue-500 text-white px-4 py-2 rounded font-medium flex items-center justify-center">
-                <Camera size={18} className="mr-2"/> Start Camera Stream
+              <button type="submit" className="w-full bg-blue-600 hover:bg-blue-500 text-white px-6 py-3 rounded-xl font-medium flex items-center justify-center space-x-2 transition-colors shadow-lg shadow-blue-600/20">
+                <Camera size={20} /> 
+                <span>Start Camera Stream</span>
               </button>
             </form>
           </div>
@@ -278,43 +303,67 @@ const Live = () => {
       )}
 
       {role === 'host' && sessionData && (
-        <div className="flex flex-col space-y-4">
-          <div className="bg-dark-800 p-4 rounded-xl border border-primary-500/30 flex justify-between items-center">
+        <div className="flex flex-col space-y-6 animate-in fade-in slide-in-from-bottom-4 duration-500">
+          <div className="bg-dark-800 p-6 rounded-2xl border border-primary-500/30 flex justify-between items-center shadow-sm">
             <div>
-              <p className="text-sm text-gray-400">Pairing Code (Enter on mobile)</p>
-              <p className="text-3xl font-mono tracking-widest font-bold text-primary-400">{sessionData.pairing_code}</p>
+              <p className="text-sm text-gray-400 font-medium mb-1">Pairing Code (Enter on mobile)</p>
+              <p className="text-4xl font-mono tracking-[0.3em] font-bold text-primary-400">{sessionData.pairing_code}</p>
             </div>
             <div className="text-right">
-              <span className="flex items-center text-sm text-gray-400"><Activity size={16} className="mr-2"/> Status: {status}</span>
+              <span className={`flex items-center text-sm font-medium px-4 py-2 rounded-full border ${
+                  status.includes('Receiving') ? 'bg-green-500/10 text-green-400 border-green-500/30' : 'bg-yellow-500/10 text-yellow-500 border-yellow-500/30'
+              }`}>
+                  <Activity size={16} className="mr-2"/> {status.toUpperCase()}
+              </span>
             </div>
           </div>
           
-          <div className="bg-black rounded-xl overflow-hidden relative border border-dark-700 flex items-center justify-center h-[60vh]">
+          <div className="bg-black rounded-2xl overflow-hidden relative border border-dark-700 flex items-center justify-center aspect-video shadow-xl">
             <video ref={remoteVideoRef} autoPlay playsInline className="w-full h-full object-contain"></video>
-            {status !== 'Receiving Stream' && <p className="text-dark-600 text-xl font-bold">WAITING FOR CAMERA STREAM...</p>}
+            {status !== 'Receiving Stream' && (
+                <div className="absolute inset-0 flex flex-col items-center justify-center bg-dark-900/80 backdrop-blur-sm">
+                   <div className="w-16 h-16 border-4 border-dark-700 border-t-primary-500 rounded-full animate-spin mb-4"></div>
+                   <p className="text-gray-400 font-medium tracking-wide">WAITING FOR SECURE P2P CONNECTION...</p>
+                </div>
+            )}
             {status === 'Receiving Stream' && <BoundingBoxOverlay />}
+            {isRecording && (
+                <div className="absolute top-4 right-4 bg-red-500/90 backdrop-blur text-white px-3 py-1.5 rounded-full text-xs font-bold flex items-center shadow-lg animate-pulse">
+                    <div className="w-2 h-2 bg-white rounded-full mr-2"></div>
+                    REC
+                </div>
+            )}
           </div>
           
-          <div className="flex space-x-4">
-            <button onClick={saveRecording} className="bg-green-600 hover:bg-green-500 text-white px-4 py-2 rounded font-medium flex items-center">
-              Save Recording {isRecording ? '(Recording...)' : ''}
+          <div className="flex justify-end space-x-4">
+             <button onClick={discardRecording} className="bg-dark-700 hover:bg-dark-600 text-white px-6 py-3 rounded-xl font-medium transition-colors border border-dark-600">
+              Discard & End Session
             </button>
-            <button onClick={discardRecording} className="bg-red-600 hover:bg-red-500 text-white px-4 py-2 rounded font-medium flex items-center">
-              Discard & End
+            <button onClick={saveRecording} className="bg-green-600 hover:bg-green-500 text-white px-6 py-3 rounded-xl font-medium flex items-center space-x-2 transition-colors shadow-lg shadow-green-600/20">
+              <span>Save Recording to Library</span>
             </button>
           </div>
         </div>
       )}
 
       {role === 'client' && (
-        <div className="flex flex-col space-y-4">
-          <div className="bg-dark-800 p-4 rounded-xl border border-dark-700">
-            <p className="text-sm text-center mb-2 font-bold text-green-400">{status}</p>
-            <div className="bg-black rounded-xl overflow-hidden relative border border-dark-600 flex items-center justify-center h-[50vh]">
-              <video ref={localVideoRef} autoPlay playsInline muted className="w-full h-full object-cover"></video>
+        <div className="flex flex-col max-w-2xl mx-auto space-y-6 animate-in fade-in slide-in-from-bottom-4 duration-500">
+          <div className="bg-dark-800 p-6 rounded-2xl border border-dark-700 shadow-sm">
+            <div className="flex justify-between items-center mb-6">
+                <h2 className="text-xl font-bold text-white flex items-center"><Camera className="mr-2 text-blue-400" size={24}/> Secure Camera Link</h2>
+                <span className="bg-green-500/10 text-green-400 px-3 py-1 rounded-full text-xs font-bold border border-green-500/30 flex items-center">
+                    <div className="w-1.5 h-1.5 rounded-full bg-green-500 animate-pulse mr-1.5"></div>
+                    {status.toUpperCase()}
+                </span>
             </div>
-            <button onClick={() => window.location.reload()} className="w-full mt-4 bg-red-600 hover:bg-red-500 text-white px-4 py-3 rounded font-medium">
-              Disconnect
+            
+            <div className="bg-black rounded-xl overflow-hidden relative border border-dark-700 flex items-center justify-center aspect-video shadow-inner">
+              <video ref={localVideoRef} autoPlay playsInline muted className="w-full h-full object-cover transform -scale-x-100"></video>
+            </div>
+            
+            <button onClick={() => window.location.reload()} className="w-full mt-6 bg-red-600/90 hover:bg-red-500 text-white px-4 py-3.5 rounded-xl font-medium transition-colors flex items-center justify-center space-x-2">
+              <XCircle size={20} />
+              <span>End Transmission</span>
             </button>
           </div>
         </div>
